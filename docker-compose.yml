@@ -1,0 +1,27 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    environment:
+      PATCHPILOT_ENV: development
+      PATCHPILOT_PLANNER: deterministic
+      PATCHPILOT_DATABASE_PATH: /data/patchpilot.db
+      PATCHPILOT_WORKSPACE_ROOT: /workspaces
+    ports:
+      - "8000:8000"
+    volumes:
+      - patchpilot-data:/data
+      - patchpilot-workspaces:/workspaces
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  patchpilot-data:
+  patchpilot-workspaces:
+

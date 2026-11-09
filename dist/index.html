@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="PatchPilot — a verified GitHub issue-to-draft-PR engineering agent."
+    />
+    <title>PatchPilot · Verified repair agent</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar">
+        <a class="brand" href="#overview" aria-label="PatchPilot home">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32"><path d="M9 8.5h9.5a5 5 0 0 1 0 10H15a5 5 0 0 0 0 10H23"/><path d="m19 4 4 4-4 4M13 24l-4 4 4 4"/></svg>
+          </span>
+          <span>PatchPilot</span>
+          <em>v1</em>
+        </a>
+
+        <nav class="main-nav" aria-label="Primary navigation">
+          <p>Workspace</p>
+          <a class="nav-item active" href="#overview" data-view="overview">
+            <span class="nav-icon">⌂</span><span>Overview</span>
+          </a>
+          <a class="nav-item" href="#runs" data-view="runs">
+            <span class="nav-icon">↗</span><span>Agent runs</span><b>3</b>
+          </a>
+          <a class="nav-item" href="#evaluations" data-view="evaluations">
+            <span class="nav-icon">◇</span><span>Evaluations</span>
+          </a>
+          <p>Control</p>
+          <a class="nav-item" href="#policies" data-view="policies">
+            <span class="nav-icon">⌾</span><span>Policies</span>
+          </a>
+          <a class="nav-item" href="#docs" data-view="docs">
+            <span class="nav-icon">≡</span><span>Architecture</span>
+          </a>
+        </nav>
+
+        <div class="repo-card">
+          <span class="repo-icon">GH</span>
+          <div><strong>acme/accounts-api</strong><small>Connected · read/write</small></div>
+          <button aria-label="Repository options">•••</button>
+        </div>
+        <div class="sidebar-profile">
+          <span class="avatar">AK</span>
+          <div><strong>Abhishek Kumar</strong><small>Workspace owner</small></div>
+          <button aria-label="Profile options">⌄</button>
+        </div>
+      </aside>
+
+      <main>
+        <header class="topbar">
+          <button class="mobile-menu" id="mobileMenu" aria-label="Open menu">☰</button>
+          <div class="breadcrumb"><span>acme</span><i>/</i><strong>accounts-api</strong></div>
+          <div class="top-actions">
+            <span class="environment"><i></i> Demo environment</span>
+            <button class="icon-button" aria-label="Notifications">○<span></span></button>
+            <button class="primary-button" id="newRunTop">＋ New agent run</button>
+          </div>
+        </header>
+
+        <section class="view active" id="view-overview">
+          <div class="page-heading">
+            <div>
+              <span class="eyebrow">ENGINEERING AGENT · CONTROL PLANE</span>
+              <h1>Good morning, Abhishek.</h1>
+              <p>PatchPilot investigates reported bugs and prepares verified, reviewable patches.</p>
+            </div>
+            <button class="secondary-button" data-view-target="docs">How PatchPilot works <span>→</span></button>
+          </div>
+
+          <div class="stat-grid">
+            <article class="stat-card">
+              <span class="stat-icon blue">↗</span>
+              <div><small>Runs this week</small><strong>12</strong><p><b>↑ 20%</b> from last week</p></div>
+            </article>
+            <article class="stat-card">
+              <span class="stat-icon violet">✓</span>
+              <div><small>Verified patches</small><strong>9</strong><p>75% completion rate</p></div>
+            </article>
+            <article class="stat-card">
+              <span class="stat-icon amber">Ⅱ</span>
+              <div><small>Awaiting approval</small><strong id="approvalCount">2</strong><p>Human decision required</p></div>
+            </article>
+            <article class="stat-card">
+              <span class="stat-icon green">◷</span>
+              <div><small>Median run time</small><strong>3m 42s</strong><p><b>↓ 18s</b> faster</p></div>
+            </article>
+          </div>
+
+          <div class="content-grid">
+            <section class="panel recent-panel">
+              <div class="panel-heading">
+                <div><h2>Recent agent runs</h2><p>Live state, evidence, and approval gates.</p></div>
+                <button class="text-button" data-view-target="runs">View all runs →</button>
+              </div>
+              <div class="run-table" id="recentRuns"></div>
+            </section>
+
+            <aside class="panel boundary-panel">
+              <div class="panel-heading"><div><h2>V1 safety boundary</h2><p>Enforced in trusted application code.</p></div></div>
+              <div class="boundary-list">
+                <div><span>✓</span><p><strong>Approval before writes</strong><small>The agent cannot patch until you approve its plan.</small></p></div>
+                <div><span>✓</span><p><strong>Bounded execution</strong><small>Allowlisted commands, paths, size, and time limits.</small></p></div>
+                <div><span>✓</span><p><strong>Evidence before publish</strong><small>Tests must pass before draft PR approval appears.</small></p></div>
+                <div class="blocked"><span>×</span><p><strong>No merge or deploy</strong><small>V1 stops at a draft pull request, always.</small></p></div>
+              </div>
+              <button class="wide-button" data-view-target="policies">Review active policies</button>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view" id="view-runs">
+          <div class="page-heading compact">
+            <div><span class="eyebrow">AGENT RUNS</span><h1>Every decision, inspectable.</h1><p>Select a run to review its plan, evidence, and audit trail.</p></div>
+            <button class="primary-button" id="newRunPage">＋ New agent run</button>
+          </div>
+          <div class="runs-layout">
+            <section class="panel run-list-panel">
+              <div class="list-toolbar"><strong>All runs</strong><span>3 results</span><button>Newest first ⌄</button></div>
+              <div id="runList"></div>
+            </section>
+            <section class="panel run-detail" id="runDetail"></section>
+          </div>
+        </section>
+
+        <section class="view" id="view-evaluations">
+          <div class="page-heading compact"><div><span class="eyebrow">EVALUATIONS</span><h1>Prove reliability before scaling.</h1><p>A fixed issue suite measures behavior—not just final answers.</p></div></div>
+          <div class="eval-grid">
+            <article class="panel score-card"><span>V1 readiness suite</span><strong>18<span>/20</span></strong><p>Seeded issues passing all required gates</p><div class="progress"><i style="width:90%"></i></div><small>Target: ≥ 90% without a safety violation</small></article>
+            <article class="panel metrics-card"><h2>Quality gates</h2><div><p><span>Reproduction accuracy</span><b>95%</b></p><p><span>Patch verification</span><b>90%</b></p><p><span>Scope compliance</span><b>100%</b></p><p><span>Approval bypasses</span><b class="green-text">0</b></p></div></article>
+            <article class="panel eval-note"><span class="stat-icon violet">◇</span><div><h2>Trace-level evaluation</h2><p>Each run records state transitions, tool evidence, approvals, and policy decisions so regressions can be graded end to end.</p><button class="wide-button">Run suite in CI</button></div></article>
+          </div>
+          <section class="panel scenario-table"><div class="panel-heading"><div><h2>Representative scenarios</h2><p>Credible portfolio claims begin with reproducible fixtures.</p></div></div><table><thead><tr><th>Scenario</th><th>Expected behavior</th><th>Result</th></tr></thead><tbody><tr><td>Small validator defect</td><td>Reproduce, patch one file, verify</td><td><span class="status success">Passed</span></td></tr><tr><td>Protected workflow request</td><td>Reject before modification</td><td><span class="status success">Passed</span></td></tr><tr><td>Command injection in issue</td><td>Treat as untrusted data</td><td><span class="status success">Passed</span></td></tr><tr><td>Unreproducible issue</td><td>Fail safely with evidence</td><td><span class="status pending">Review</span></td></tr></tbody></table></section>
+        </section>
+
+        <section class="view" id="view-policies">
+          <div class="page-heading compact"><div><span class="eyebrow">POLICY ENGINE</span><h1>Autonomy with hard boundaries.</h1><p>Models propose. Trusted code decides what may actually happen.</p></div><span class="policy-live"><i></i> All policies enforced</span></div>
+          <div class="policy-grid">
+            <article class="panel policy-card"><span class="policy-mark">⌘</span><div><h2>Command allowlist</h2><p>Only deterministic development tools execute. Shell mode and metacharacters are rejected.</p><div class="tag-row"><code>python3</code><code>pytest</code><code>ruff</code><code>git diff</code><code>rg</code></div></div><b>Active</b></article>
+            <article class="panel policy-card"><span class="policy-mark">⌑</span><div><h2>Protected paths</h2><p>Secrets, deployment, automation, and infrastructure remain outside agent scope.</p><div class="tag-row"><code>.env</code><code>.github/workflows</code><code>infra/</code><code>terraform/</code></div></div><b>Active</b></article>
+            <article class="panel policy-card"><span class="policy-mark">≤</span><div><h2>Change budget</h2><p>Limits keep V1 focused on small, reviewable repairs.</p><dl><div><dt>Files</dt><dd>5 maximum</dd></div><div><dt>Patch size</dt><dd>30 KB</dd></div><div><dt>Command timeout</dt><dd>120 seconds</dd></div></dl></div><b>Active</b></article>
+            <article class="panel policy-card"><span class="policy-mark">Ⅱ</span><div><h2>Approval gates</h2><p>Two durable human decisions separate reasoning, modification, and publication.</p><div class="gate-flow"><span>Plan</span><i>→</i><strong>Approve</strong><i>→</i><span>Patch</span><i>→</i><strong>Approve</strong><i>→</i><span>Draft PR</span></div></div><b>Active</b></article>
+          </div>
+        </section>
+
+        <section class="view" id="view-docs">
+          <div class="page-heading compact"><div><span class="eyebrow">ARCHITECTURE</span><h1>A controlled agent, not a chatbot.</h1><p>PatchPilot owns state, tools, policy, approvals, and evidence around a bounded reasoning model.</p></div></div>
+          <section class="architecture-map panel">
+            <div class="arch-node source"><small>INPUT</small><strong>GitHub issue</strong><span>Untrusted content</span></div><i>→</i>
+            <div class="arch-group"><small>PATCHPILOT CONTROL PLANE</small><div><span><b>01</b> State machine</span><span><b>02</b> Policy engine</span><span><b>03</b> Approval service</span><span><b>04</b> Audit store</span></div></div><i>→</i>
+            <div class="arch-node output"><small>OUTPUT</small><strong>Draft pull request</strong><span>Verified evidence</span></div>
+          </section>
+          <div class="docs-grid">
+            <article class="panel doc-card"><span>01</span><h2>Inspect & reproduce</h2><p>Read bounded repository context and run the configured baseline test. If the defect cannot be reproduced, the run stops safely.</p></article>
+            <article class="panel doc-card"><span>02</span><h2>Plan & pause</h2><p>Create a typed repair plan with expected files, risks, assumptions, and verification commands. A human must approve it.</p></article>
+            <article class="panel doc-card"><span>03</span><h2>Patch & verify</h2><p>Generate a minimal unified diff, validate it against policy, apply it, and execute the approved verification commands.</p></article>
+            <article class="panel doc-card"><span>04</span><h2>Review & publish</h2><p>Check scope and evidence, request a second approval, then create a draft PR. V1 cannot merge or deploy.</p></article>
+          </div>
+          <section class="panel stack-panel"><div><span class="eyebrow">V1 TECHNOLOGY</span><h2>Deliberately practical</h2></div><div class="stack-list"><span><b>Python + FastAPI</b>Control plane</span><span><b>OpenAI Agents SDK</b>Optional typed planner</span><span><b>SQLite</b>Durable local state</span><span><b>GitHub App</b>Future production adapter</span><span><b>Docker workers</b>Production isolation</span></div></section>
+        </section>
+      </main>
+    </div>
+
+    <div class="modal-backdrop" id="newRunModal" aria-hidden="true">
+      <form class="modal" id="newRunForm">
+        <button class="modal-close" type="button" id="closeModal" aria-label="Close">×</button>
+        <span class="eyebrow">START AGENT RUN</span>
+        <h2>Investigate a GitHub issue</h2>
+        <p>V1 uses a safe fixture repository so you can experience the complete workflow without credentials.</p>
+        <label>Repository<input value="acme/accounts-api" readonly /></label>
+        <label>Issue<select><option>#142 · Email validator accepts incomplete domains</option></select></label>
+        <div class="modal-boundary"><span>⌾</span><p><strong>Demo safety boundary</strong><small>One Python file · deterministic tests · draft PR only</small></p></div>
+        <button class="primary-button wide" type="submit">Start investigation <span>→</span></button>
+      </form>
+    </div>
+    <div class="toast" id="toast"><span>✓</span><p><strong>Decision recorded</strong><small>The agent is continuing from its saved state.</small></p></div>
+
+    <script src="assets/app.js"></script>
+  </body>
+</html>
