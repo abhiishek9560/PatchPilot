@@ -1,62 +1,129 @@
 # PatchPilot
 
-PatchPilot is a verified GitHub issue-to-draft-PR agent. It investigates a small bug, reproduces it, proposes a repair plan, pauses for human approval, applies a constrained patch, runs verification, reviews its own diff, and prepares a draft pull request with evidence.
+PatchPilot is a human-approved code-repair agent that turns a small, reproducible
+Python bug into a tested draft pull-request proposal.
 
-Version 1 deliberately supports a narrow, safe workflow: one Python repository, deterministic test commands, a bounded file-change policy, and mandatory approval before any write or publication step.
+It demonstrates the engineering around an agent, not just an LLM call: explicit
+workflow state, bounded repository tools, policy enforcement, two approval gates,
+SQLite persistence, test evidence, and an auditable event timeline.
 
-## What is included
+**Live dashboard:** https://patchpilot-agent.dotingtulip8.chatgpt.site
 
-- A stateful agent workflow with explicit transitions and resumable approval
-- A deterministic demo planner and an optional OpenAI Agents SDK planner
-- Repository inspection, command-policy, patch-policy, and verification boundaries
-- SQLite-backed run/event persistence
-- FastAPI endpoints for runs, approvals, rejection, and audit history
-- GitHub webhook and draft-PR adapter boundaries
-- A deliberately broken fixture repository and executable end-to-end demo
-- Unit tests for state transitions and security policies
-- A responsive dashboard that works in demo mode without credentials
-- Product, security, architecture, evaluation, and roadmap documentation
+> The hosted static dashboard is an interactive product demonstration. The
+> executable workflow runs locally through FastAPI or the included CLI demo.
+> V1 uses a synthetic publisher; live GitHub App publication is planned for V1.1.
 
-## Repository layout
+## V1 workflow
 
-```text
-apps/api/                 FastAPI control plane and agent workflow
-dist/                     Published dashboard prototype
-fixtures/                 Safe repository used by the demo and evals
-docs/                     Product and engineering documentation
-scripts/run_demo.py       Local end-to-end agent demonstration
-```
+~~~text
+Issue received
+    -> inspect repository
+    -> reproduce defect
+    -> create repair plan
+    -> HUMAN APPROVAL
+    -> generate and policy-check patch
+    -> run verification
+    -> review scope and evidence
+    -> HUMAN APPROVAL
+    -> create draft-PR record
+~~~
 
-## Quick start
+The workflow fails closed if the defect cannot be reproduced, a command or path
+is disallowed, the patch exceeds its budget, tests fail, or approval is missing.
+V1 cannot merge code or deploy an application.
 
-The deterministic workflow requires only Python 3.11+:
+## What is implemented
 
-```bash
+- Resumable issue-to-draft-PR state machine
+- Deterministic credential-free demo planner
+- Optional OpenAI Agents SDK plan and patch adapter
+- Bounded file inspection, subprocess execution, and unified-diff application
+- Command, path, file-count, patch-size, and timeout policies
+- Mandatory approval before patching and before publication
+- SQLite-backed run and event persistence
+- FastAPI endpoints for runs, approvals, rejection, and audit state
+- GitHub webhook HMAC verification and a publisher interface
+- Responsive dashboard with real local-API mode and public demo mode
+- Docker runtime and GitHub Actions CI
+- 11 automated tests plus an executable end-to-end demo
+
+## Quick demo
+
+The deterministic demo has no external dependencies or API key:
+
+~~~bash
 python3 scripts/run_demo.py
 python3 -m unittest discover -s apps/api/tests -v
-```
+~~~
 
-To run the API after installing the optional application dependencies:
+Expected result: the bug is reproduced, the workflow pauses twice for approval,
+the patch passes verification, and all 11 tests pass.
 
-```bash
+## Run the connected dashboard
+
+~~~bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e '.[dev]'
 cp .env.example .env
 uvicorn patchpilot.main:app --app-dir apps/api --reload
-```
+~~~
 
-The OpenAI-backed planner is disabled by default. Set `PATCHPILOT_PLANNER=openai` and provide `OPENAI_API_KEY` only in a local secret manager or deployment environment. Never commit credentials.
+Open http://127.0.0.1:8000. On localhost the dashboard calls the real FastAPI
+workflow and stores runs in .patchpilot/patchpilot.db.
 
-## V1 safety contract
+Docker is also supported:
 
-PatchPilot does not merge, deploy, access production, read secrets, execute arbitrary commands, or modify protected paths. A run must reproduce the issue and receive explicit human approval before patching. Publication creates a draft PR only.
+~~~bash
+docker compose up --build
+~~~
+
+## Optional LLM planner
+
+Credential-free deterministic mode is the default. To use the real structured
+model adapter:
+
+~~~env
+PATCHPILOT_PLANNER=openai
+OPENAI_API_KEY=your_api_key
+OPENAI_MODEL=your_available_coding_model
+~~~
+
+The model proposes typed plans and diffs. Trusted PatchPilot code still owns
+tools, policies, approvals, execution, and publication. Keep API keys only on
+the backend and never commit .env.
+
+## Repository layout
+
+~~~text
+apps/api/patchpilot/   FastAPI control plane and workflow
+apps/api/tests/        Policy, workflow, persistence, and webhook tests
+dist/                  Dashboard served by FastAPI and the public Site
+fixtures/              Deliberately broken repository used by V1
+docs/                  Product, architecture, security, evaluation, roadmap
+scripts/run_demo.py    Credential-free end-to-end demonstration
+~~~
+
+## Honest V1 boundary
+
+V1 supports one deliberately narrow Python fixture and a configured unit-test
+command. The deterministic planner's patch is known in advance so CI remains
+reproducible. The optional model adapter can propose a plan and patch, but V1
+does not yet clone arbitrary private repositories or publish to the real GitHub
+API.
+
+The next milestone, V1.1, adds GitHub App installation tokens, task-specific
+clones, real branch/commit/draft-PR publication, webhook idempotency, and live
+progress events. See [the roadmap](docs/ROADMAP.md).
 
 ## Documentation
 
 - [Product plan](docs/PRODUCT_PLAN.md)
 - [Architecture](docs/ARCHITECTURE.md)
-- [Threat model and security](docs/SECURITY.md)
+- [Security model](docs/SECURITY.md)
 - [Evaluation plan](docs/EVALUATION.md)
 - [Roadmap](docs/ROADMAP.md)
 
+## License
+
+MIT

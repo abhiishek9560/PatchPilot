@@ -6,6 +6,7 @@ from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .config import Settings
@@ -37,7 +38,7 @@ workflow = PatchPilotWorkflow(
 
 app = FastAPI(
     title="PatchPilot API",
-    version="0.1.0",
+    version="1.0.0",
     description="A bounded GitHub issue-to-draft-PR agent with human approval gates.",
 )
 app.add_middleware(
@@ -129,3 +130,7 @@ def reject_run(run_id: str, request: RejectionRequest) -> dict:
         return workflow.reject(run_id, request.actor, request.reason).to_dict()
     except InvalidTransition as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+# Keep this mount last so API routes win before the single-page dashboard fallback.
+app.mount("/", StaticFiles(directory=PROJECT_ROOT / "dist", html=True), name="dashboard")

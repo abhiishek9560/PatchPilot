@@ -59,7 +59,7 @@ The planner does not execute commands or publish changes. It receives bounded ev
 
 ### GitHub integration
 
-`github.py` verifies webhook signatures, normalizes issues, and defines draft-PR publication. GitHub credentials stay in the trusted service. Demo mode returns a synthetic PR result.
+`github.py` verifies webhook signatures and defines the draft-PR publication boundary. GitHub credentials stay in the trusted service. V1 uses a synthetic publisher; issue normalization and live GitHub publication are V1.1 work.
 
 ### API and dashboard
 
@@ -91,15 +91,14 @@ Each transition records an event containing actor, timestamp, summary, and safe 
 | --- | --- | --- |
 | `GET` | `/health` | Service and configuration health |
 | `GET` | `/api/runs` | List runs |
-| `POST` | `/api/runs` | Create a manual run |
+| `POST` | `/api/runs/demo` | Create the bounded fixture run |
 | `GET` | `/api/runs/{id}` | Run state and evidence |
 | `POST` | `/api/runs/{id}/advance` | Execute next safe workflow step |
-| `POST` | `/api/runs/{id}/approve` | Approve current plan |
-| `POST` | `/api/runs/{id}/reject` | Reject current plan |
-| `GET` | `/api/runs/{id}/events` | Ordered audit events |
-| `POST` | `/api/github/webhook` | Receive validated GitHub events |
+| `POST` | `/api/runs/{id}/approvals` | Approve the plan or draft-PR publication |
+| `POST` | `/api/runs/{id}/rejection` | Reject a paused run |
+
+Ordered audit events are included in each run response. A live GitHub webhook endpoint is intentionally deferred to V1.1; V1 unit-tests the signature-verification primitive and publisher interface.
 
 ## Production evolution
 
 V2 replaces the in-process runner with a queue and isolated workers, SQLite with PostgreSQL, polling with server-sent events, and the synthetic publisher with a GitHub App installation-token flow.
-

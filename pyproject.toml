@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "patchpilot"
-version = "0.1.0"
+version = "1.0.0"
 description = "Verified GitHub issue-to-draft-PR agent"
 requires-python = ">=3.11"
 dependencies = [
@@ -30,4 +30,3 @@ target-version = "py311"
 
 [tool.pytest.ini_options]
 testpaths = ["apps/api/tests"]
-

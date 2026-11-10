@@ -65,6 +65,19 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(run.status, RunStatus.REJECTED)
         self.assertEqual(self.workflow.run_until_pause(run.id).status, RunStatus.REJECTED)
 
+    def test_unreproducible_issue_fails_without_writing(self) -> None:
+        validator = self.workspace / "app" / "validation.py"
+        validator.write_text(
+            'def is_valid_email(value: str) -> bool:\n'
+            '    local, separator, domain = value.partition("@")\n'
+            '    return bool(local and separator and "." in domain)\n',
+            encoding="utf-8",
+        )
+        run = self.workflow.run_until_pause(self.run.id)
+        self.assertEqual(run.status, RunStatus.FAILED)
+        self.assertIn("could not be reproduced", run.failure.lower())
+        self.assertIsNone(run.patch)
+
 
 if __name__ == "__main__":
     unittest.main()
