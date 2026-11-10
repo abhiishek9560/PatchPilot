@@ -82,6 +82,18 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=1, max_length=256)
 
 
+class IssueAssignmentRequest(BaseModel):
+    selection_mode: Literal["manual", "automatic"] = "manual"
+
+
+class PlanFeedbackRequest(BaseModel):
+    message: str = Field(min_length=3, max_length=2000)
+
+
+class ProductApprovalRequest(BaseModel):
+    stage: Literal["plan", "publish"]
+
+
 def _run_or_404(run_id: str):
     try:
         return store.get(run_id)
@@ -235,6 +247,76 @@ def issues(
     repository_id: int | None = None, user: User = Depends(current_user)
 ) -> list[dict]:
     return product_store.list_issues(user.id, repository_id)
+
+
+@app.post("/api/issues/{repository_id}/{issue_number}/assign", status_code=201)
+def assign_issue(
+    repository_id: int,
+    issue_number: int,
+    request: IssueAssignmentRequest,
+    user: User = Depends(current_user),
+) -> dict:
+    try:
+        return product_store.assign_issue(
+            user.id, repository_id, issue_number, request.selection_mode
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/api/issues/auto-assign", status_code=201)
+def auto_assign_issue(
+    organization_id: str = Query(min_length=1), user: User = Depends(current_user)
+) -> dict:
+    try:
+        return product_store.auto_assign_next_issue(user.id, organization_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/work-items")
+def work_items(user: User = Depends(current_user)) -> list[dict]:
+    return product_store.list_work_items(user.id)
+
+
+@app.get("/api/work-items/{work_item_id}")
+def get_work_item(work_item_id: str, user: User = Depends(current_user)) -> dict:
+    try:
+        return product_store.get_work_item(user.id, work_item_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/work-items/{work_item_id}/plan-feedback", status_code=201)
+def submit_plan_feedback(
+    work_item_id: str,
+    request: PlanFeedbackRequest,
+    user: User = Depends(current_user),
+) -> dict:
+    try:
+        return product_store.submit_plan_feedback(user.id, work_item_id, request.message)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/work-items/{work_item_id}/approvals", status_code=201)
+def approve_work_item(
+    work_item_id: str,
+    request: ProductApprovalRequest,
+    user: User = Depends(current_user),
+) -> dict:
+    try:
+        return product_store.approve_work_item(user.id, work_item_id, request.stage)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.get("/api/runs")

@@ -104,6 +104,11 @@ Each transition records an event containing actor, timestamp, summary, and safe 
 | `POST` | `/api/github/webhooks` | Receive signed, idempotent GitHub events |
 | `GET` | `/api/repositories` | List authorized synchronized repositories |
 | `GET` | `/api/issues` | List authorized synchronized issues |
+| `POST` | `/api/issues/{repo}/{number}/assign` | Queue a user-selected issue |
+| `POST` | `/api/issues/auto-assign` | Select and queue the next open issue |
+| `GET` | `/api/work-items` | List authorized product work |
+| `POST` | `/api/work-items/{id}/plan-feedback` | Request a versioned plan revision |
+| `POST` | `/api/work-items/{id}/approvals` | Queue patch or publication after approval |
 | `GET` | `/api/runs` | List demo runs |
 | `POST` | `/api/runs/demo` | Create the bounded fixture run |
 | `GET` | `/api/runs/{id}` | Run state and evidence |
@@ -117,4 +122,7 @@ durable worker queue are implemented.
 
 ## Production evolution
 
-V2 replaces the in-process runner with a queue and isolated workers, SQLite with PostgreSQL, polling with server-sent events, and the synthetic publisher with a GitHub App installation-token flow.
+The production deployment replaces the local SQLite queue adapter with PostgreSQL,
+runs the implemented lease-based dispatcher in isolated workers, adds server-sent
+progress events, and connects the implemented GitHub App client to verified branch
+pushes and draft-PR publication.

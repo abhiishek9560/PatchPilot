@@ -200,7 +200,7 @@ function setAuthMode(mode) {
     : "Need an account? Register";
 }
 
-function renderResources(repositories = [], issues = []) {
+function renderResources(repositories = [], issues = [], workItems = []) {
   document.getElementById("repoCount").textContent = `${repositories.length} ${repositories.length === 1 ? "repository" : "repositories"}`;
   document.getElementById("issueCount").textContent = `${issues.length} ${issues.length === 1 ? "issue" : "issues"}`;
   document.getElementById("repositoryList").className = repositories.length ? "resource-list" : "empty-state";
@@ -209,8 +209,21 @@ function renderResources(repositories = [], issues = []) {
     : "Install the GitHub App to see repositories here.";
   document.getElementById("issueList").className = issues.length ? "resource-list" : "empty-state";
   document.getElementById("issueList").innerHTML = issues.length
-    ? issues.map((issue) => `<div class="resource-row"><div><strong>#${Number(issue.number)} · ${escapeHtml(issue.title)}</strong><small>${escapeHtml(issue.full_name)}</small></div><span>${escapeHtml(issue.state)}</span></div>`).join("")
+    ? issues.map((issue) => `<div class="resource-row with-actions"><div><strong>#${Number(issue.number)} · ${escapeHtml(issue.title)}</strong><small>${escapeHtml(issue.full_name)}</small></div><div class="resource-row-actions"><span>${escapeHtml(issue.state)}</span><button class="button secondary mini assign-issue" data-repository-id="${Number(issue.repository_id)}" data-issue-number="${Number(issue.number)}">Assign</button></div></div>`).join("")
     : "Signed GitHub issue events will appear here.";
+  const activeCount = workItems.filter((item) => !["completed", "failed", "rejected", "cancelled"].includes(item.status)).length;
+  document.getElementById("workItemCount").textContent = `${activeCount} active`;
+  document.getElementById("workItemList").className = workItems.length ? "resource-list" : "empty-state";
+  document.getElementById("workItemList").innerHTML = workItems.length
+    ? workItems.map((item) => {
+      const approval = item.status === "awaiting_plan_approval"
+        ? `<button class="button secondary mini suggest-plan" data-work-item-id="${escapeHtml(item.id)}">Suggest changes</button><button class="button primary mini approve-work" data-stage="plan" data-work-item-id="${escapeHtml(item.id)}">Approve plan</button>`
+        : item.status === "awaiting_publish_approval"
+          ? `<button class="button primary mini approve-work" data-stage="publish" data-work-item-id="${escapeHtml(item.id)}">Approve draft PR</button>`
+          : `<span class="work-status">${escapeHtml(item.status.replaceAll("_", " "))}</span>`;
+      return `<div class="resource-row with-actions"><div><strong>#${Number(item.issue_number)} · ${escapeHtml(item.issue_title)}</strong><small>${escapeHtml(item.full_name)} · plan v${Number(item.plan_version)}</small></div><div class="resource-row-actions">${approval}</div></div>`;
+    }).join("")
+    : "Assign an issue to create a durable planning job.";
 }
 
 async function renderAccount() {
@@ -226,11 +239,12 @@ async function renderAccount() {
   }
   document.getElementById("accountName").textContent = currentAccount.organizations[0]?.name || "Your workspace";
   try {
-    const [repositories, issues] = await Promise.all([
+    const [repositories, issues, workItems] = await Promise.all([
       request("/api/repositories"),
       request("/api/issues"),
+      request("/api/work-items"),
     ]);
-    renderResources(repositories, issues);
+    renderResources(repositories, issues, workItems);
   } catch (error) {
     showToast("Could not load workspace", error.message);
   }
@@ -280,6 +294,59 @@ async function connectGithub() {
     window.location.assign(result.install_url);
   } catch (error) {
     showToast("GitHub connection unavailable", error.message);
+  }
+}
+
+async function assignIssue(repositoryId, issueNumber) {
+  try {
+    await request(`/api/issues/${repositoryId}/${issueNumber}/assign`, {
+      method: "POST",
+      body: JSON.stringify({ selection_mode: "manual" }),
+    });
+    await renderAccount();
+    showToast("Issue assigned", "A durable planning job is ready for the PatchPilot worker.");
+  } catch (error) {
+    showToast("Assignment failed", error.message);
+  }
+}
+
+async function autoAssignIssue() {
+  if (!currentAccount?.organizations?.length) return;
+  try {
+    const organizationId = encodeURIComponent(currentAccount.organizations[0].id);
+    await request(`/api/issues/auto-assign?organization_id=${organizationId}`, { method: "POST" });
+    await renderAccount();
+    showToast("Issue selected", "PatchPilot chose the next unassigned open issue.");
+  } catch (error) {
+    showToast("No issue selected", error.message);
+  }
+}
+
+async function approveProductWork(workItemId, stage) {
+  try {
+    await request(`/api/work-items/${workItemId}/approvals`, {
+      method: "POST",
+      body: JSON.stringify({ stage }),
+    });
+    await renderAccount();
+    showToast("Approval recorded", stage === "plan" ? "The patch job is now queued." : "Draft PR publication is now queued.");
+  } catch (error) {
+    showToast("Approval failed", error.message);
+  }
+}
+
+async function suggestPlanChange(workItemId) {
+  const message = window.prompt("What should PatchPilot change in this plan?");
+  if (!message) return;
+  try {
+    await request(`/api/work-items/${workItemId}/plan-feedback`, {
+      method: "POST",
+      body: JSON.stringify({ message }),
+    });
+    await renderAccount();
+    showToast("Feedback recorded", "A new plan revision job is queued.");
+  } catch (error) {
+    showToast("Feedback failed", error.message);
   }
 }
 
@@ -345,6 +412,17 @@ document.getElementById("authForm").addEventListener("submit", submitAuth);
 document.getElementById("authToggle").addEventListener("click", () => setAuthMode(authMode === "register" ? "login" : "register"));
 document.getElementById("logoutButton").addEventListener("click", logout);
 document.getElementById("connectGithub").addEventListener("click", connectGithub);
+document.getElementById("autoAssign").addEventListener("click", autoAssignIssue);
+document.getElementById("issueList").addEventListener("click", (event) => {
+  const button = event.target.closest(".assign-issue");
+  if (button) assignIssue(Number(button.dataset.repositoryId), Number(button.dataset.issueNumber));
+});
+document.getElementById("workItemList").addEventListener("click", (event) => {
+  const approval = event.target.closest(".approve-work");
+  const suggestion = event.target.closest(".suggest-plan");
+  if (approval) approveProductWork(approval.dataset.workItemId, approval.dataset.stage);
+  if (suggestion) suggestPlanChange(suggestion.dataset.workItemId);
+});
 
 async function initialize() {
   try {

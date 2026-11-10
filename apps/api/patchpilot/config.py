@@ -47,6 +47,10 @@ class Settings:
         default_factory=lambda: int(os.getenv("PATCHPILOT_SESSION_DAYS", "14"))
     )
     github_app_slug: str = field(default_factory=lambda: os.getenv("GITHUB_APP_SLUG", ""))
+    github_app_id: str = field(default_factory=lambda: os.getenv("GITHUB_APP_ID", ""))
+    github_private_key: str = field(
+        default_factory=lambda: os.getenv("GITHUB_PRIVATE_KEY", "").replace("\\n", "\n")
+    )
     github_webhook_secret: str = field(
         default_factory=lambda: os.getenv("GITHUB_WEBHOOK_SECRET", "")
     )

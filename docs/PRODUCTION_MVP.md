@@ -64,6 +64,11 @@ and migrations land in Slice 2.
 - Plan revisions, comments, approvals, and live progress events
 - Per-run authorization on every API operation
 
+Status: the local adapter now implements authorized work items, manual/automatic
+selection, idempotent assignment, versioned feedback, approvals, and expiring
+job leases with bounded retries. PostgreSQL migrations and isolated execution are
+the remaining production-hosting pieces.
+
 ### Slice 3 — real patch and PR
 
 - GitHub App JWT and one-hour installation-token exchange
@@ -71,6 +76,10 @@ and migrations land in Slice 2.
 - Isolated execution with CPU, memory, time, filesystem, and network limits
 - Branch creation, signed audit metadata, push, and draft-PR REST call
 - Retry-safe publication so one run cannot create duplicate PRs
+
+Status: GitHub App JWT creation, repository-scoped installation-token exchange,
+and the draft-PR REST boundary are implemented and covered by transport-level tests.
+Clone/branch/push and isolated test execution remain.
 
 ### Slice 4 — launch
 

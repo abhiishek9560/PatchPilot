@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import RLock
 from uuid import uuid4
@@ -131,6 +131,58 @@ class SQLiteProductStore:
                     received_at TEXT NOT NULL,
                     processed_at TEXT
                 );
+                CREATE TABLE IF NOT EXISTS work_items (
+                    id TEXT PRIMARY KEY,
+                    organization_id TEXT NOT NULL REFERENCES organizations(id),
+                    repository_id INTEGER NOT NULL REFERENCES repositories(github_id),
+                    issue_number INTEGER NOT NULL,
+                    requested_by TEXT NOT NULL REFERENCES users(id),
+                    selection_mode TEXT NOT NULL CHECK(selection_mode IN ('manual', 'automatic')),
+                    status TEXT NOT NULL,
+                    plan_payload TEXT,
+                    plan_version INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (repository_id, issue_number) REFERENCES issues(repository_id, number)
+                );
+                CREATE INDEX IF NOT EXISTS work_items_organization
+                    ON work_items(organization_id, updated_at DESC);
+                CREATE UNIQUE INDEX IF NOT EXISTS one_active_work_item_per_issue
+                    ON work_items(organization_id, repository_id, issue_number)
+                    WHERE status NOT IN ('completed', 'rejected', 'failed', 'cancelled');
+                CREATE TABLE IF NOT EXISTS plan_feedback (
+                    id TEXT PRIMARY KEY,
+                    work_item_id TEXT NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
+                    user_id TEXT NOT NULL REFERENCES users(id),
+                    plan_version INTEGER NOT NULL,
+                    message TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS work_item_approvals (
+                    id TEXT PRIMARY KEY,
+                    work_item_id TEXT NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
+                    user_id TEXT NOT NULL REFERENCES users(id),
+                    stage TEXT NOT NULL CHECK(stage IN ('plan', 'publish')),
+                    plan_version INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(work_item_id, stage, plan_version)
+                );
+                CREATE TABLE IF NOT EXISTS durable_jobs (
+                    id TEXT PRIMARY KEY,
+                    work_item_id TEXT NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
+                    kind TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK(status IN ('queued', 'leased', 'completed', 'failed')),
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    available_at TEXT NOT NULL,
+                    lease_owner TEXT,
+                    lease_expires_at TEXT,
+                    last_error TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS durable_jobs_claim
+                    ON durable_jobs(status, available_at, created_at);
                 """
             )
 
@@ -378,3 +430,355 @@ class SQLiteProductStore:
             item["labels"] = json.loads(item["labels"])
             result.append(item)
         return result
+
+    @staticmethod
+    def _work_item(row: sqlite3.Row) -> dict:
+        item = dict(row)
+        plan_payload = item.pop("plan_payload")
+        item["plan"] = json.loads(plan_payload) if plan_payload else None
+        return item
+
+    def assign_issue(
+        self,
+        user_id: str,
+        repository_id: int,
+        issue_number: int,
+        selection_mode: str = "manual",
+    ) -> dict:
+        if selection_mode not in {"manual", "automatic"}:
+            raise ValueError("Invalid issue selection mode")
+        now = utc_now()
+        with self._lock, self._connect() as connection:
+            issue = connection.execute(
+                """
+                SELECT issues.*, github_installations.organization_id
+                FROM issues JOIN repositories ON repositories.github_id = issues.repository_id
+                JOIN github_installations USING (installation_id)
+                JOIN organization_memberships
+                  ON organization_memberships.organization_id = github_installations.organization_id
+                WHERE issues.repository_id = ? AND issues.number = ?
+                  AND organization_memberships.user_id = ? AND repositories.active = 1
+                """,
+                (repository_id, issue_number, user_id),
+            ).fetchone()
+            if issue is None:
+                raise PermissionError("Issue is not available in your workspace")
+            existing = connection.execute(
+                """
+                SELECT work_items.*, repositories.full_name, issues.title AS issue_title
+                FROM work_items JOIN repositories ON repositories.github_id = work_items.repository_id
+                JOIN issues ON issues.repository_id = work_items.repository_id
+                  AND issues.number = work_items.issue_number
+                WHERE work_items.organization_id = ? AND work_items.repository_id = ?
+                  AND work_items.issue_number = ?
+                  AND work_items.status NOT IN ('completed', 'rejected', 'failed', 'cancelled')
+                """,
+                (issue["organization_id"], repository_id, issue_number),
+            ).fetchone()
+            if existing:
+                return self._work_item(existing)
+            work_item_id = str(uuid4())
+            connection.execute(
+                """
+                INSERT INTO work_items VALUES (?, ?, ?, ?, ?, ?, 'queued_for_plan', NULL, 0, ?, ?)
+                """,
+                (
+                    work_item_id,
+                    issue["organization_id"],
+                    repository_id,
+                    issue_number,
+                    user_id,
+                    selection_mode,
+                    now,
+                    now,
+                ),
+            )
+            self._enqueue_job(connection, work_item_id, "create_plan", {})
+            row = connection.execute(
+                """
+                SELECT work_items.*, repositories.full_name, issues.title AS issue_title
+                FROM work_items JOIN repositories ON repositories.github_id = work_items.repository_id
+                JOIN issues ON issues.repository_id = work_items.repository_id
+                  AND issues.number = work_items.issue_number
+                WHERE work_items.id = ?
+                """,
+                (work_item_id,),
+            ).fetchone()
+        return self._work_item(row)
+
+    def auto_assign_next_issue(self, user_id: str, organization_id: str) -> dict:
+        self.require_membership(user_id, organization_id)
+        with self._connect() as connection:
+            candidate = connection.execute(
+                """
+                SELECT issues.repository_id, issues.number
+                FROM issues JOIN repositories ON repositories.github_id = issues.repository_id
+                JOIN github_installations USING (installation_id)
+                WHERE github_installations.organization_id = ? AND repositories.active = 1
+                  AND issues.state = 'open'
+                  AND NOT EXISTS (
+                    SELECT 1 FROM work_items
+                    WHERE work_items.organization_id = github_installations.organization_id
+                      AND work_items.repository_id = issues.repository_id
+                      AND work_items.issue_number = issues.number
+                      AND work_items.status NOT IN ('completed', 'rejected', 'failed', 'cancelled')
+                  )
+                ORDER BY
+                  CASE WHEN issues.labels LIKE '%"bug"%' THEN 0 ELSE 1 END,
+                  issues.updated_at DESC
+                LIMIT 1
+                """,
+                (organization_id,),
+            ).fetchone()
+        if candidate is None:
+            raise LookupError("No unassigned open issue is available")
+        return self.assign_issue(
+            user_id,
+            int(candidate["repository_id"]),
+            int(candidate["number"]),
+            selection_mode="automatic",
+        )
+
+    def _enqueue_job(
+        self, connection: sqlite3.Connection, work_item_id: str, kind: str, payload: dict
+    ) -> str:
+        job_id = str(uuid4())
+        now = utc_now()
+        connection.execute(
+            """
+            INSERT INTO durable_jobs(
+                id, work_item_id, kind, payload, status, attempts, available_at,
+                lease_owner, lease_expires_at, last_error, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, 'queued', 0, ?, NULL, NULL, NULL, ?, ?)
+            """,
+            (job_id, work_item_id, kind, json.dumps(payload), now, now, now),
+        )
+        return job_id
+
+    def list_work_items(self, user_id: str) -> list[dict]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT work_items.*, repositories.full_name, issues.title AS issue_title
+                FROM work_items JOIN repositories ON repositories.github_id = work_items.repository_id
+                JOIN issues ON issues.repository_id = work_items.repository_id
+                  AND issues.number = work_items.issue_number
+                JOIN organization_memberships
+                  ON organization_memberships.organization_id = work_items.organization_id
+                WHERE organization_memberships.user_id = ?
+                ORDER BY work_items.updated_at DESC
+                """,
+                (user_id,),
+            ).fetchall()
+        return [self._work_item(row) for row in rows]
+
+    def get_work_item(self, user_id: str, work_item_id: str) -> dict:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT work_items.*, repositories.full_name, issues.title AS issue_title
+                FROM work_items JOIN repositories ON repositories.github_id = work_items.repository_id
+                JOIN issues ON issues.repository_id = work_items.repository_id
+                  AND issues.number = work_items.issue_number
+                JOIN organization_memberships
+                  ON organization_memberships.organization_id = work_items.organization_id
+                WHERE work_items.id = ? AND organization_memberships.user_id = ?
+                """,
+                (work_item_id, user_id),
+            ).fetchone()
+        if row is None:
+            raise KeyError("Unknown or unauthorized work item")
+        item = self._work_item(row)
+        item["feedback"] = self.list_plan_feedback(user_id, work_item_id)
+        return item
+
+    def list_plan_feedback(self, user_id: str, work_item_id: str) -> list[dict]:
+        self.get_work_item_authorization(user_id, work_item_id)
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT plan_feedback.id, plan_feedback.plan_version, plan_feedback.message,
+                       plan_feedback.created_at, users.display_name AS author
+                FROM plan_feedback JOIN users ON users.id = plan_feedback.user_id
+                WHERE plan_feedback.work_item_id = ? ORDER BY plan_feedback.created_at
+                """,
+                (work_item_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_work_item_authorization(self, user_id: str, work_item_id: str) -> sqlite3.Row:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT work_items.* FROM work_items JOIN organization_memberships
+                  ON organization_memberships.organization_id = work_items.organization_id
+                WHERE work_items.id = ? AND organization_memberships.user_id = ?
+                """,
+                (work_item_id, user_id),
+            ).fetchone()
+        if row is None:
+            raise KeyError("Unknown or unauthorized work item")
+        return row
+
+    def record_plan(self, work_item_id: str, plan: dict) -> dict:
+        with self._lock, self._connect() as connection:
+            row = connection.execute(
+                "SELECT plan_version FROM work_items WHERE id = ?", (work_item_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError("Unknown work item")
+            version = int(row["plan_version"]) + 1
+            connection.execute(
+                """
+                UPDATE work_items SET status = 'awaiting_plan_approval', plan_payload = ?,
+                    plan_version = ?, updated_at = ? WHERE id = ?
+                """,
+                (json.dumps(plan), version, utc_now(), work_item_id),
+            )
+        return {"work_item_id": work_item_id, "plan_version": version, "plan": plan}
+
+    def submit_plan_feedback(self, user_id: str, work_item_id: str, message: str) -> dict:
+        message = " ".join(message.strip().split())
+        if len(message) < 3 or len(message) > 2000:
+            raise ValueError("Feedback must contain 3 to 2000 characters")
+        with self._lock, self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT work_items.* FROM work_items JOIN organization_memberships
+                  ON organization_memberships.organization_id = work_items.organization_id
+                WHERE work_items.id = ? AND organization_memberships.user_id = ?
+                """,
+                (work_item_id, user_id),
+            ).fetchone()
+            if row is None:
+                raise KeyError("Unknown or unauthorized work item")
+            if row["status"] != "awaiting_plan_approval":
+                raise ValueError("Plan feedback is only accepted while plan approval is pending")
+            feedback_id = str(uuid4())
+            now = utc_now()
+            connection.execute(
+                "INSERT INTO plan_feedback VALUES (?, ?, ?, ?, ?, ?)",
+                (feedback_id, work_item_id, user_id, row["plan_version"], message, now),
+            )
+            connection.execute(
+                "UPDATE work_items SET status = 'queued_for_plan_revision', updated_at = ? WHERE id = ?",
+                (now, work_item_id),
+            )
+            self._enqueue_job(
+                connection,
+                work_item_id,
+                "revise_plan",
+                {"feedback_id": feedback_id, "plan_version": row["plan_version"]},
+            )
+        return {"id": feedback_id, "message": message, "created_at": now}
+
+    def approve_work_item(self, user_id: str, work_item_id: str, stage: str) -> dict:
+        expected_status = {
+            "plan": "awaiting_plan_approval",
+            "publish": "awaiting_publish_approval",
+        }.get(stage)
+        if expected_status is None:
+            raise ValueError("Approval stage must be plan or publish")
+        next_status = "queued_for_patch" if stage == "plan" else "queued_for_publish"
+        job_kind = "create_patch" if stage == "plan" else "publish_draft_pr"
+        with self._lock, self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT work_items.* FROM work_items JOIN organization_memberships
+                  ON organization_memberships.organization_id = work_items.organization_id
+                WHERE work_items.id = ? AND organization_memberships.user_id = ?
+                """,
+                (work_item_id, user_id),
+            ).fetchone()
+            if row is None:
+                raise KeyError("Unknown or unauthorized work item")
+            if row["status"] != expected_status:
+                raise ValueError(f"Cannot approve {stage} while work item is {row['status']}")
+            approval_id = str(uuid4())
+            now = utc_now()
+            connection.execute(
+                "INSERT INTO work_item_approvals VALUES (?, ?, ?, ?, ?, ?)",
+                (approval_id, work_item_id, user_id, stage, row["plan_version"], now),
+            )
+            connection.execute(
+                "UPDATE work_items SET status = ?, updated_at = ? WHERE id = ?",
+                (next_status, now, work_item_id),
+            )
+            self._enqueue_job(connection, work_item_id, job_kind, {})
+        return {"id": approval_id, "stage": stage, "created_at": now}
+
+    def claim_job(self, worker_id: str, lease_seconds: int = 300) -> dict | None:
+        now = datetime.now(timezone.utc)
+        now_text = now.isoformat()
+        lease_expires = (now + timedelta(seconds=lease_seconds)).isoformat()
+        with self._lock, self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                """
+                SELECT * FROM durable_jobs
+                WHERE (status = 'queued' AND available_at <= ?)
+                   OR (status = 'leased' AND lease_expires_at <= ?)
+                ORDER BY created_at LIMIT 1
+                """,
+                (now_text, now_text),
+            ).fetchone()
+            if row is None:
+                return None
+            connection.execute(
+                """
+                UPDATE durable_jobs SET status = 'leased', attempts = attempts + 1,
+                    lease_owner = ?, lease_expires_at = ?, updated_at = ? WHERE id = ?
+                """,
+                (worker_id, lease_expires, now_text, row["id"]),
+            )
+            result = dict(row)
+            result.update(
+                status="leased",
+                attempts=int(row["attempts"]) + 1,
+                lease_owner=worker_id,
+                lease_expires_at=lease_expires,
+            )
+            result["payload"] = json.loads(result["payload"])
+            return result
+
+    def complete_job(self, job_id: str, worker_id: str) -> None:
+        with self._connect() as connection:
+            updated = connection.execute(
+                """
+                UPDATE durable_jobs SET status = 'completed', lease_owner = NULL,
+                    lease_expires_at = NULL, updated_at = ?
+                WHERE id = ? AND status = 'leased' AND lease_owner = ?
+                """,
+                (utc_now(), job_id, worker_id),
+            ).rowcount
+        if not updated:
+            raise PermissionError("Worker does not own this job lease")
+
+    def fail_job(
+        self, job_id: str, worker_id: str, error: str, retry_delay_seconds: int = 30
+    ) -> bool:
+        available = (datetime.now(timezone.utc) + timedelta(seconds=retry_delay_seconds)).isoformat()
+        with self._connect() as connection:
+            job = connection.execute(
+                "SELECT attempts FROM durable_jobs WHERE id = ? AND lease_owner = ?",
+                (job_id, worker_id),
+            ).fetchone()
+            if job is None:
+                raise PermissionError("Worker does not own this job lease")
+            final = int(job["attempts"]) >= 3
+            connection.execute(
+                """
+                UPDATE durable_jobs SET status = ?, available_at = ?, lease_owner = NULL,
+                    lease_expires_at = NULL, last_error = ?, updated_at = ? WHERE id = ?
+                """,
+                ("failed" if final else "queued", available, error[:1000], utc_now(), job_id),
+            )
+            if final:
+                connection.execute(
+                    """
+                    UPDATE work_items SET status = 'failed', updated_at = ?
+                    WHERE id = (SELECT work_item_id FROM durable_jobs WHERE id = ?)
+                    """,
+                    (utc_now(), job_id),
+                )
+        return final

@@ -48,7 +48,10 @@ V1 cannot merge code or deploy an application.
 - Docker runtime and GitHub Actions CI
 - Account registration, secure browser sessions, and personal workspaces
 - Signed/idempotent GitHub webhook intake with repository and issue projections
-- 17 automated tests plus an executable end-to-end demo
+- Manual and automatic issue assignment with tenant authorization
+- Durable lease/retry jobs, versioned plan feedback, and approval-driven queuing
+- Short-lived GitHub App token exchange and real draft-PR API boundary
+- 26 automated tests plus an executable end-to-end demo
 
 ## Quick demo
 
@@ -60,7 +63,7 @@ python3 -m unittest discover -s apps/api/tests -v
 ~~~
 
 Expected result: the bug is reproduced, the workflow pauses twice for approval,
-the patch passes verification, and all 17 tests pass.
+the patch passes verification, and all 26 tests pass.
 
 ## Run the connected dashboard
 
