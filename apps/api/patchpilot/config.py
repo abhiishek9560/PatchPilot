@@ -40,4 +40,17 @@ class Settings:
         )
     )
     openai_model: str = field(default_factory=lambda: os.getenv("OPENAI_MODEL", ""))
+    session_cookie_name: str = field(
+        default_factory=lambda: os.getenv("PATCHPILOT_SESSION_COOKIE", "patchpilot_session")
+    )
+    session_lifetime_days: int = field(
+        default_factory=lambda: int(os.getenv("PATCHPILOT_SESSION_DAYS", "14"))
+    )
+    github_app_slug: str = field(default_factory=lambda: os.getenv("GITHUB_APP_SLUG", ""))
+    github_webhook_secret: str = field(
+        default_factory=lambda: os.getenv("GITHUB_WEBHOOK_SECRET", "")
+    )
 
+    @property
+    def secure_cookies(self) -> bool:
+        return self.environment != "development"

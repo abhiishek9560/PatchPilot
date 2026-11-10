@@ -1,4 +1,6 @@
-const apiMode = ["localhost", "127.0.0.1"].includes(window.location.hostname);
+let apiMode = false;
+let currentAccount = null;
+let authMode = "register";
 
 const demoRun = () => ({
   id: "public-demo",
@@ -55,6 +57,15 @@ function showToast(title, message) {
   toast.querySelector("span").textContent = message;
   toast.classList.add("show");
   window.setTimeout(() => toast.classList.remove("show"), 3200);
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 function showView(name) {
@@ -160,11 +171,116 @@ function renderRun() {
 async function request(path, options = {}) {
   const response = await fetch(path, {
     ...options,
+    credentials: "same-origin",
     headers: { "Content-Type": "application/json", ...(options.headers || {}) },
   });
-  const payload = await response.json();
-  if (!response.ok) throw new Error(payload.detail || "Request failed");
+  if (response.status === 204) return null;
+  const contentType = response.headers.get("content-type") || "";
+  const payload = contentType.includes("application/json") ? await response.json() : null;
+  if (!response.ok) {
+    const detail = payload?.detail;
+    const message = typeof detail === "string" ? detail : "Request failed";
+    throw new Error(message);
+  }
   return payload;
+}
+
+function setAuthMode(mode) {
+  authMode = mode;
+  const registering = mode === "register";
+  document.getElementById("authTitle").textContent = registering
+    ? "Create your PatchPilot account"
+    : "Sign in to PatchPilot";
+  document.getElementById("displayNameField").hidden = !registering;
+  document.getElementById("displayName").required = registering;
+  document.getElementById("password").autocomplete = registering ? "new-password" : "current-password";
+  document.getElementById("authSubmit").textContent = registering ? "Create account" : "Sign in";
+  document.getElementById("authToggle").textContent = registering
+    ? "Already registered? Sign in"
+    : "Need an account? Register";
+}
+
+function renderResources(repositories = [], issues = []) {
+  document.getElementById("repoCount").textContent = `${repositories.length} ${repositories.length === 1 ? "repository" : "repositories"}`;
+  document.getElementById("issueCount").textContent = `${issues.length} ${issues.length === 1 ? "issue" : "issues"}`;
+  document.getElementById("repositoryList").className = repositories.length ? "resource-list" : "empty-state";
+  document.getElementById("repositoryList").innerHTML = repositories.length
+    ? repositories.map((repository) => `<div class="resource-row"><div><strong>${escapeHtml(repository.full_name)}</strong><small>Default branch: ${escapeHtml(repository.default_branch)}</small></div><span>${repository.private ? "Private" : "Public"}</span></div>`).join("")
+    : "Install the GitHub App to see repositories here.";
+  document.getElementById("issueList").className = issues.length ? "resource-list" : "empty-state";
+  document.getElementById("issueList").innerHTML = issues.length
+    ? issues.map((issue) => `<div class="resource-row"><div><strong>#${Number(issue.number)} · ${escapeHtml(issue.title)}</strong><small>${escapeHtml(issue.full_name)}</small></div><span>${escapeHtml(issue.state)}</span></div>`).join("")
+    : "Signed GitHub issue events will appear here.";
+}
+
+async function renderAccount() {
+  const signedIn = Boolean(currentAccount);
+  document.getElementById("signedOutPanel").hidden = signedIn;
+  document.getElementById("signedInPanel").hidden = !signedIn;
+  document.getElementById("accountButton").textContent = signedIn
+    ? currentAccount.user.display_name
+    : "Sign in";
+  if (!signedIn) {
+    renderResources();
+    return;
+  }
+  document.getElementById("accountName").textContent = currentAccount.organizations[0]?.name || "Your workspace";
+  try {
+    const [repositories, issues] = await Promise.all([
+      request("/api/repositories"),
+      request("/api/issues"),
+    ]);
+    renderResources(repositories, issues);
+  } catch (error) {
+    showToast("Could not load workspace", error.message);
+  }
+}
+
+async function submitAuth(event) {
+  event.preventDefault();
+  if (!apiMode) {
+    showToast("Backend not connected", "Open this dashboard from the PatchPilot API to create an account.");
+    return;
+  }
+  const payload = {
+    email: document.getElementById("email").value,
+    password: document.getElementById("password").value,
+  };
+  if (authMode === "register") payload.display_name = document.getElementById("displayName").value;
+  try {
+    currentAccount = await request(`/api/auth/${authMode}`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    document.getElementById("authForm").reset();
+    await renderAccount();
+    showToast(authMode === "register" ? "Account created" : "Signed in", "Your workspace session is active.");
+  } catch (error) {
+    showToast("Account action failed", error.message);
+  }
+}
+
+async function logout() {
+  try {
+    if (apiMode) await request("/api/auth/logout", { method: "POST" });
+    currentAccount = null;
+    setAuthMode("login");
+    await renderAccount();
+    showToast("Signed out", "The browser session has been revoked.");
+  } catch (error) {
+    showToast("Sign out failed", error.message);
+  }
+}
+
+async function connectGithub() {
+  if (!currentAccount?.organizations?.length) return;
+  try {
+    const organizationId = encodeURIComponent(currentAccount.organizations[0].id);
+    const result = await request(`/api/github/connect?organization_id=${organizationId}`, { method: "POST" });
+    window.location.assign(result.install_url);
+  } catch (error) {
+    showToast("GitHub connection unavailable", error.message);
+  }
 }
 
 async function restartRun() {
@@ -224,24 +340,45 @@ async function rejectRun() {
 document.getElementById("restartRun").addEventListener("click", restartRun);
 document.getElementById("approveButton").addEventListener("click", approveRun);
 document.getElementById("rejectButton").addEventListener("click", rejectRun);
+document.getElementById("accountButton").addEventListener("click", () => showView("product"));
+document.getElementById("authForm").addEventListener("submit", submitAuth);
+document.getElementById("authToggle").addEventListener("click", () => setAuthMode(authMode === "register" ? "login" : "register"));
+document.getElementById("logoutButton").addEventListener("click", logout);
+document.getElementById("connectGithub").addEventListener("click", connectGithub);
 
 async function initialize() {
+  try {
+    const health = await request("/health");
+    apiMode = health?.status === "ok";
+  } catch (_error) {
+    apiMode = false;
+  }
   document.getElementById("modeLabel").textContent = apiMode
-    ? "Connected to local FastAPI workflow"
+    ? "Connected to PatchPilot API"
     : "Interactive public demo";
   if (apiMode) {
     document.getElementById("truthTitle").textContent = "This dashboard is connected to the executable workflow.";
-    document.getElementById("truthCopy").textContent = "Actions call the local FastAPI service and persist run state in SQLite.";
+    document.getElementById("truthCopy").textContent = "Actions call the FastAPI service and persist workflow and account state.";
     try {
-      const runs = await request("/api/runs");
+      const [runs, account] = await Promise.all([
+        request("/api/runs"),
+        request("/api/auth/me").catch(() => null),
+      ]);
       if (runs.length) currentRun = runs[0];
+      currentAccount = account;
     } catch (error) {
       showToast("API unavailable", "Showing the interactive demo state instead.");
     }
   }
+  setAuthMode("register");
+  await renderAccount();
   renderRun();
   const initial = location.hash.slice(1);
-  showView(["demo", "workflow", "project"].includes(initial) ? initial : "demo");
+  showView(["demo", "product", "workflow", "project"].includes(initial) ? initial : "demo");
+  if (new URLSearchParams(location.search).get("github") === "connected") {
+    showView("product");
+    showToast("GitHub connected", "Verified repositories will appear as signed events arrive.");
+  }
 }
 
 initialize();

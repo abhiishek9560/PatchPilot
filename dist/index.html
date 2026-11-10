@@ -19,8 +19,9 @@
         </a>
         <nav aria-label="Main navigation">
           <a class="nav-link active" href="#demo" data-view="demo"><span>01</span>Live demo</a>
-          <a class="nav-link" href="#workflow" data-view="workflow"><span>02</span>How it works</a>
-          <a class="nav-link" href="#project" data-view="project"><span>03</span>V1 project</a>
+          <a class="nav-link" href="#product" data-view="product"><span>02</span>Product access</a>
+          <a class="nav-link" href="#workflow" data-view="workflow"><span>03</span>How it works</a>
+          <a class="nav-link" href="#project" data-view="project"><span>04</span>Project status</a>
         </nav>
         <div class="scope-note">
           <span class="signal"></span>
@@ -32,7 +33,10 @@
         <header class="topbar">
           <button class="menu-button" id="menuButton" aria-label="Open navigation">☰</button>
           <div><span class="product-label">PATCHPILOT / V1</span></div>
-          <div class="mode-badge"><span></span><b id="modeLabel">Interactive public demo</b></div>
+          <div class="topbar-actions">
+            <div class="mode-badge"><span></span><b id="modeLabel">Interactive public demo</b></div>
+            <button class="account-button" id="accountButton">Sign in</button>
+          </div>
         </header>
 
         <section class="view active" id="view-demo">
@@ -89,6 +93,50 @@
           </div>
         </section>
 
+        <section class="view" id="view-product">
+          <div class="page-intro narrow">
+            <div><p class="kicker">REAL PRODUCT FOUNDATION</p><h1>Connect your work.<br />Keep control.</h1><p class="lede">Create an account, install the PatchPilot GitHub App on selected repositories, and review synchronized issues before assigning any work.</p></div>
+          </div>
+          <div class="product-grid">
+            <section class="panel auth-panel" id="signedOutPanel">
+              <div class="panel-head"><div><p class="eyebrow">ACCOUNT</p><h2 id="authTitle">Create your PatchPilot account</h2></div><span class="status success">Available in API mode</span></div>
+              <form id="authForm">
+                <label id="displayNameField"><span>Display name</span><input id="displayName" name="display_name" autocomplete="name" placeholder="Abhishek" minlength="2" maxlength="80" required /></label>
+                <label><span>Email</span><input id="email" name="email" type="email" autocomplete="email" placeholder="you@example.com" required /></label>
+                <label><span>Password</span><input id="password" name="password" type="password" autocomplete="new-password" minlength="10" placeholder="At least 10 characters" required /></label>
+                <button class="button primary wide" id="authSubmit" type="submit">Create account</button>
+                <button class="text-button" id="authToggle" type="button">Already registered? Sign in</button>
+              </form>
+              <p class="form-note" id="authNote">Passwords are scrypt-hashed. Browser sessions use an HTTP-only cookie; GitHub credentials never enter this form.</p>
+            </section>
+
+            <section class="panel account-panel" id="signedInPanel" hidden>
+              <div class="panel-head"><div><p class="eyebrow">WORKSPACE</p><h2 id="accountName">Your workspace</h2></div><button class="text-button" id="logoutButton">Sign out</button></div>
+              <div class="connect-block">
+                <div><p class="eyebrow">GITHUB APP</p><strong>Connect selected repositories</strong><small>PatchPilot receives signed issue events and uses short-lived installation access.</small></div>
+                <button class="button primary" id="connectGithub">Connect GitHub</button>
+              </div>
+              <div class="resource-block">
+                <div class="section-title"><p class="eyebrow">CONNECTED REPOSITORIES</p><span id="repoCount">0 repositories</span></div>
+                <div class="empty-state" id="repositoryList">Install the GitHub App to see repositories here.</div>
+              </div>
+              <div class="resource-block">
+                <div class="section-title"><p class="eyebrow">AVAILABLE ISSUES</p><span id="issueCount">0 issues</span></div>
+                <div class="empty-state" id="issueList">Signed GitHub issue events will appear here.</div>
+              </div>
+            </section>
+
+            <aside class="panel foundation-panel">
+              <div class="panel-head"><div><p class="eyebrow">IMPLEMENTATION STATUS</p><h2>Production MVP</h2></div></div>
+              <div class="foundation-step complete"><i>✓</i><div><strong>Accounts and sessions</strong><small>Registration, login, logout, membership</small></div></div>
+              <div class="foundation-step complete"><i>✓</i><div><strong>GitHub event intake</strong><small>HMAC validation and delivery idempotency</small></div></div>
+              <div class="foundation-step active"><i>→</i><div><strong>Repository execution worker</strong><small>Queued isolated clone, patch, tests, branch</small></div></div>
+              <div class="foundation-step"><i>·</i><div><strong>Real draft PR publisher</strong><small>Installation token and GitHub REST API</small></div></div>
+              <p class="foundation-note">The public Site remains a showcase. Account and GitHub actions activate when this dashboard is served by the PatchPilot API.</p>
+            </aside>
+          </div>
+        </section>
+
         <section class="view" id="view-workflow">
           <div class="page-intro narrow">
             <div><p class="kicker">EXPLICIT STATE MACHINE</p><h1>Models propose.<br />Trusted code decides.</h1><p class="lede">The LLM never receives GitHub credentials and cannot bypass reproduction, policy checks, tests, or approval gates.</p></div>
@@ -108,7 +156,7 @@
             <div><p class="kicker">RESUME-READY V1</p><h1>Small scope.<br />Complete evidence.</h1><p class="lede">A deliberately narrow engineering project that demonstrates agent orchestration, policy enforcement, approvals, persistence, testing, and deployment.</p></div>
           </div>
           <div class="proof-grid">
-            <article><strong>11 / 11</strong><span>Automated tests passing</span></article>
+            <article><strong>17 / 17</strong><span>Automated tests passing</span></article>
             <article><strong>2</strong><span>Mandatory approval gates</span></article>
             <article><strong>0</strong><span>Automatic merges or deploys</span></article>
           </div>
@@ -119,7 +167,8 @@
             <div class="capability"><div><strong>Policy engine</strong><small>Paths, commands, file count, and patch size</small></div><span>Complete</span></div>
             <div class="capability"><div><strong>Persistence</strong><small>SQLite runs, evidence, approvals, and events</small></div><span>Complete</span></div>
             <div class="capability"><div><strong>Model adapter</strong><small>Deterministic demo plus optional OpenAI Agents SDK</small></div><span>Complete</span></div>
-            <div class="capability planned"><div><strong>Live GitHub App</strong><small>Installation tokens and real draft-PR publication</small></div><span>V1.1</span></div>
+            <div class="capability"><div><strong>Account foundation</strong><small>Registration, secure sessions, and workspace membership</small></div><span>Complete</span></div>
+            <div class="capability planned"><div><strong>Live GitHub publication</strong><small>Installation tokens and real draft-PR publication</small></div><span>In progress</span></div>
           </section>
           <div class="stack-row">
             <span><b>Python 3.11+</b>workflow</span><span><b>FastAPI</b>control plane</span><span><b>SQLite</b>audit state</span><span><b>OpenAI Agents SDK</b>optional model</span><span><b>Docker</b>runtime</span><span><b>GitHub Actions</b>CI</span>

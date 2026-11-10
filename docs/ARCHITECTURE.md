@@ -55,11 +55,18 @@ The planner does not execute commands or publish changes. It receives bounded ev
 
 ### Persistence
 
-`store.py` uses SQLite for V1 runs and events. The interface is intentionally small so PostgreSQL can replace it without changing workflow behavior.
+`store.py` uses SQLite for V1 runs and events. `product_store.py` adds users,
+digest-only sessions, organizations, GitHub installations, repositories, issues,
+and idempotent webhook deliveries. SQLite remains the local adapter; the production
+MVP moves these tables to PostgreSQL before multi-instance deployment.
 
 ### GitHub integration
 
-`github.py` verifies webhook signatures and defines the draft-PR publication boundary. GitHub credentials stay in the trusted service. V1 uses a synthetic publisher; issue normalization and live GitHub publication are V1.1 work.
+`github.py` verifies webhook signatures, projects installation/repository/issue
+events, and defines the draft-PR publication boundary. The API correlates installs
+with short-lived setup state and claims them only after a matching signed webhook.
+GitHub credentials stay in the trusted service. Live installation-token exchange
+and draft-PR publication remain production-MVP work.
 
 ### API and dashboard
 
@@ -90,14 +97,23 @@ Each transition records an event containing actor, timestamp, summary, and safe 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/health` | Service and configuration health |
-| `GET` | `/api/runs` | List runs |
+| `POST` | `/api/auth/register` | Create an account and workspace |
+| `POST` | `/api/auth/login` | Start an HTTP-only browser session |
+| `GET` | `/api/auth/me` | Restore the signed-in account |
+| `POST` | `/api/github/connect` | Begin a state-bound GitHub App install |
+| `POST` | `/api/github/webhooks` | Receive signed, idempotent GitHub events |
+| `GET` | `/api/repositories` | List authorized synchronized repositories |
+| `GET` | `/api/issues` | List authorized synchronized issues |
+| `GET` | `/api/runs` | List demo runs |
 | `POST` | `/api/runs/demo` | Create the bounded fixture run |
 | `GET` | `/api/runs/{id}` | Run state and evidence |
 | `POST` | `/api/runs/{id}/advance` | Execute next safe workflow step |
 | `POST` | `/api/runs/{id}/approvals` | Approve the plan or draft-PR publication |
 | `POST` | `/api/runs/{id}/rejection` | Reject a paused run |
 
-Ordered audit events are included in each run response. A live GitHub webhook endpoint is intentionally deferred to V1.1; V1 unit-tests the signature-verification primitive and publisher interface.
+Ordered audit events are included in each run response. Demo-run routes remain
+separate from the authenticated production-product routes while ownership and the
+durable worker queue are implemented.
 
 ## Production evolution
 

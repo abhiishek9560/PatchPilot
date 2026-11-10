@@ -10,8 +10,9 @@ SQLite persistence, test evidence, and an auditable event timeline.
 **Live dashboard:** https://patchpilot-agent.dotingtulip8.chatgpt.site
 
 > The hosted static dashboard is an interactive product demonstration. The
-> executable workflow runs locally through FastAPI or the included CLI demo.
-> V1 uses a synthetic publisher; live GitHub App publication is planned for V1.1.
+> executable workflow runs through FastAPI or the included CLI demo. Account and
+> GitHub-intake foundations are now implemented locally; V1 still uses a synthetic
+> publisher while isolated execution and live publication are completed.
 
 ## V1 workflow
 
@@ -45,7 +46,9 @@ V1 cannot merge code or deploy an application.
 - GitHub webhook HMAC verification and a publisher interface
 - Responsive dashboard with real local-API mode and public demo mode
 - Docker runtime and GitHub Actions CI
-- 11 automated tests plus an executable end-to-end demo
+- Account registration, secure browser sessions, and personal workspaces
+- Signed/idempotent GitHub webhook intake with repository and issue projections
+- 17 automated tests plus an executable end-to-end demo
 
 ## Quick demo
 
@@ -57,7 +60,7 @@ python3 -m unittest discover -s apps/api/tests -v
 ~~~
 
 Expected result: the bug is reproduced, the workflow pauses twice for approval,
-the patch passes verification, and all 11 tests pass.
+the patch passes verification, and all 17 tests pass.
 
 ## Run the connected dashboard
 
@@ -112,9 +115,9 @@ reproducible. The optional model adapter can propose a plan and patch, but V1
 does not yet clone arbitrary private repositories or publish to the real GitHub
 API.
 
-The next milestone, V1.1, adds GitHub App installation tokens, task-specific
-clones, real branch/commit/draft-PR publication, webhook idempotency, and live
-progress events. See [the roadmap](docs/ROADMAP.md).
+The current production-MVP milestone adds PostgreSQL-backed orchestration,
+task-specific isolated clones, plan feedback, real branch/commit/draft-PR
+publication, and live progress events. See the [production MVP plan](docs/PRODUCTION_MVP.md).
 
 ## Documentation
 
@@ -123,6 +126,7 @@ progress events. See [the roadmap](docs/ROADMAP.md).
 - [Security model](docs/SECURITY.md)
 - [Evaluation plan](docs/EVALUATION.md)
 - [Roadmap](docs/ROADMAP.md)
+- [Production MVP plan](docs/PRODUCTION_MVP.md)
 
 ## License
 

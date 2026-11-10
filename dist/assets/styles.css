@@ -117,6 +117,9 @@ main { min-height: 100vh; margin-left: 240px; }
   font-size: 9px;
 }
 .mode-badge > span { width: 6px; height: 6px; border-radius: 50%; background: #4aa176; }
+.topbar-actions { display: flex; align-items: center; gap: 9px; }
+.account-button { height: 28px; padding: 0 11px; border: 1px solid var(--line); border-radius: 15px; color: #526059; background: #fff; font-size: 9px; font-weight: 700; }
+.account-button:hover { border-color: #afc6ba; color: var(--green); }
 .menu-button { display: none; border: 0; background: transparent; font-size: 20px; }
 
 .view { display: none; max-width: 1240px; margin: 0 auto; padding: 54px 38px 70px; animation: reveal .2s ease; }
@@ -200,6 +203,35 @@ code { font-family: "DM Mono", monospace; font-size: .92em; }
 .workflow-card.accent { border-color: #bad6c8; background: #f2f8f4; }
 .workflow-card.accent > span { color: var(--green-2); }
 
+.product-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(280px, .72fr); gap: 16px; align-items: start; }
+.auth-panel form { padding: 24px; display: grid; gap: 15px; }
+.auth-panel label { display: grid; gap: 7px; color: #56635c; font-size: 9px; font-weight: 600; }
+.auth-panel input { width: 100%; height: 42px; padding: 0 12px; border: 1px solid var(--line); border-radius: 7px; outline: none; color: var(--ink); background: #fbfcfb; font-size: 11px; }
+.auth-panel input:focus { border-color: #78a58f; box-shadow: 0 0 0 3px rgba(39,107,81,.09); }
+.button.wide { width: 100%; margin-top: 4px; }
+.text-button { padding: 2px; border: 0; color: var(--green-2); background: transparent; font-size: 9px; font-weight: 700; }
+.text-button:hover { text-decoration: underline; }
+.form-note { margin: 0; padding: 15px 24px; border-top: 1px solid var(--soft-line); color: #7a857f; background: #fafbfa; font-size: 8px; line-height: 1.6; }
+.connect-block { margin: 18px; padding: 17px; border: 1px solid #cfe2d8; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; gap: 18px; background: #f4faf6; }
+.connect-block > div { display: flex; flex-direction: column; gap: 5px; }
+.connect-block strong { font-size: 11px; }
+.connect-block small { color: #728078; font-size: 8px; line-height: 1.45; }
+.resource-block { padding: 20px; border-top: 1px solid var(--soft-line); }
+.empty-state { margin-top: 13px; padding: 18px; border: 1px dashed #d8e0dc; border-radius: 7px; color: #87928c; background: #fbfcfb; font-size: 9px; text-align: center; }
+.resource-row { padding: 12px 0; border-bottom: 1px solid var(--soft-line); display: flex; justify-content: space-between; gap: 18px; }
+.resource-row:last-child { border-bottom: 0; }
+.resource-row div { display: grid; gap: 4px; }
+.resource-row strong { font-size: 10px; }
+.resource-row small, .resource-row > span { color: #7c8781; font-size: 8px; }
+.foundation-step { min-height: 70px; padding: 16px 20px; border-bottom: 1px solid var(--soft-line); display: flex; align-items: center; gap: 13px; }
+.foundation-step i { flex: none; width: 23px; height: 23px; border-radius: 50%; display: grid; place-items: center; color: #8a948f; background: #edf1ef; font: normal 9px "DM Mono"; }
+.foundation-step.complete i { color: #fff; background: var(--green-2); }
+.foundation-step.active i { color: var(--amber); background: #ffebc7; }
+.foundation-step div { display: grid; gap: 5px; }
+.foundation-step strong { font-size: 10px; }
+.foundation-step small { color: #7e8983; font-size: 8px; }
+.foundation-note { margin: 16px; padding: 14px; border-radius: 7px; color: #647169; background: #f6f8f6; font-size: 8px; line-height: 1.6; }
+
 .proof-grid { margin-bottom: 16px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
 .proof-grid article { min-height: 115px; padding: 23px; border: 1px solid var(--line); border-radius: 9px; display: flex; flex-direction: column; justify-content: center; background: #fff; }
 .proof-grid strong { font-size: 27px; letter-spacing: -.04em; }
@@ -222,7 +254,7 @@ code { font-family: "DM Mono", monospace; font-size: .92em; }
 .toast span { color: var(--muted); font-size: 8px; }
 
 @media (max-width: 980px) {
-  .demo-layout { grid-template-columns: 1fr; }
+  .demo-layout, .product-grid { grid-template-columns: 1fr; }
   .workflow-grid { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 760px) {
@@ -244,5 +276,6 @@ code { font-family: "DM Mono", monospace; font-size: .92em; }
   .button-row { width: 100%; }
   .button-row .button { flex: 1; }
   .decision { margin: 12px; }
+  .connect-block { align-items: flex-start; flex-direction: column; }
   .finding, .plan-block { padding: 18px; }
 }
