@@ -10,6 +10,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --create-home --uid 10001 patchpilot
+RUN mkdir -p /data /workspaces \
+    && chown -R patchpilot:patchpilot /data /workspaces
 WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY apps/api ./apps/api
@@ -19,4 +21,4 @@ RUN pip install --no-cache-dir .
 
 USER patchpilot
 EXPOSE 8000
-CMD ["uvicorn", "patchpilot.main:app", "--app-dir", "apps/api", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "exec uvicorn patchpilot.main:app --app-dir apps/api --host 0.0.0.0 --port ${PORT:-8000}"]

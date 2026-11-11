@@ -84,6 +84,14 @@ Docker is also supported:
 docker compose up --build
 ~~~
 
+## Deploy the web application
+
+The FastAPI container serves both the dashboard and the API, so the deployed
+product uses one origin for browser sessions, GitHub setup redirects, and
+webhooks. A Render Blueprint is provided in `render.yaml`; see
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the deployment and GitHub App
+configuration.
+
 ## Optional LLM planner
 
 Credential-free deterministic mode is the default. To use the real structured

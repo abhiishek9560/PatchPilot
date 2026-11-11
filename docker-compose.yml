@@ -8,6 +8,12 @@ services:
       PATCHPILOT_PLANNER: deterministic
       PATCHPILOT_DATABASE_PATH: /data/patchpilot.db
       PATCHPILOT_WORKSPACE_ROOT: /workspaces
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
+      GITHUB_PRIVATE_KEY: ${GITHUB_PRIVATE_KEY:-}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
     ports:
       - "8000:8000"
     volumes:
@@ -24,4 +30,3 @@ services:
 volumes:
   patchpilot-data:
   patchpilot-workspaces:
-

@@ -1,0 +1,12 @@
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+.venv
+.patchpilot
+__pycache__
+*.py[cod]
+*.db
+*.sqlite*
+dist/*.tar.gz

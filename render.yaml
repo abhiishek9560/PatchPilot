@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: patchpilot
+    runtime: docker
+    plan: 0.5c-512mb
+    dockerfilePath: ./Dockerfile.api
+    dockerContext: .
+    healthCheckPath: /health
+    numInstances: 1
+    disk:
+      name: patchpilot-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: PATCHPILOT_ENV
+        value: production
+      - key: PATCHPILOT_PLANNER
+        value: deterministic
+      - key: PATCHPILOT_DATABASE_PATH
+        value: /data/patchpilot.db
+      - key: PATCHPILOT_WORKSPACE_ROOT
+        value: /data/workspaces
+      - key: GITHUB_APP_ID
+        sync: false
+      - key: GITHUB_APP_SLUG
+        sync: false
+      - key: GITHUB_PRIVATE_KEY
+        sync: false
+      - key: GITHUB_WEBHOOK_SECRET
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        sync: false
