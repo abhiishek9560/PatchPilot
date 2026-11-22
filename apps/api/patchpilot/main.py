@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
 import shutil
+import socket
+from threading import Event, Thread
 from urllib.parse import urlencode
 from pathlib import Path
 from typing import Literal
@@ -12,10 +15,17 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .config import Settings
-from .github import DemoPublisher, process_webhook_event, verify_webhook_signature
+from .github import (
+    DemoPublisher,
+    GitHubAppClient,
+    process_webhook_event,
+    verify_webhook_signature,
+)
+from .job_worker import DurableJobWorker
 from .models import Issue
 from .planner import DeterministicPlanner, OpenAIAgentPlanner
 from .product_store import PostgresProductStore, SQLiteProductStore, User
+from .product_worker import ProductJobHandlers
 from .security import hash_password, normalize_email, verify_password
 from .store import PostgresRunStore, SQLiteRunStore
 from .workflow import InvalidTransition, PatchPilotWorkflow
@@ -44,6 +54,33 @@ workflow = PatchPilotWorkflow(
     max_patch_bytes=settings.max_patch_bytes,
     timeout_seconds=settings.command_timeout_seconds,
 )
+github_client = (
+    GitHubAppClient(settings.github_app_id, settings.github_private_key)
+    if settings.github_configured
+    else None
+)
+product_job_worker: DurableJobWorker | None = None
+worker_stop = Event()
+worker_thread: Thread | None = None
+if settings.worker_enabled and github_client is not None:
+    product_handlers = ProductJobHandlers(
+        store=product_store,
+        planner=planner,
+        github=github_client,
+        workspace_root=(PROJECT_ROOT / settings.workspace_root),
+        allowed_commands=settings.allowed_commands,
+        protected_paths=settings.protected_paths,
+        max_changed_files=settings.max_changed_files,
+        max_patch_bytes=settings.max_patch_bytes,
+        timeout_seconds=settings.command_timeout_seconds,
+        git_author_name=settings.git_author_name,
+        git_author_email=settings.git_author_email,
+    )
+    product_job_worker = DurableJobWorker(
+        product_store,
+        f"{socket.gethostname()}-{os.getpid()}",
+        product_handlers.handlers,
+    )
 
 app = FastAPI(
     title="PatchPilot API",
@@ -56,6 +93,28 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+def start_product_worker() -> None:
+    global worker_thread
+    if product_job_worker is None or (worker_thread is not None and worker_thread.is_alive()):
+        return
+    worker_stop.clear()
+    worker_thread = Thread(
+        target=product_job_worker.run_forever,
+        args=(worker_stop,),
+        name="patchpilot-product-worker",
+        daemon=True,
+    )
+    worker_thread.start()
+
+
+@app.on_event("shutdown")
+def stop_product_worker() -> None:
+    worker_stop.set()
+    if worker_thread is not None:
+        worker_thread.join(timeout=5)
 
 
 class DemoRunRequest(BaseModel):
@@ -139,6 +198,8 @@ def health() -> dict[str, str]:
         "status": "ok",
         "planner": settings.planner,
         "database": "postgresql" if settings.database_url else "sqlite",
+        "github": "configured" if github_client is not None else "not_configured",
+        "worker": "running" if worker_thread is not None and worker_thread.is_alive() else "stopped",
     }
 
 
@@ -199,7 +260,7 @@ def me(user: User = Depends(current_user)) -> dict:
 def connect_github(
     organization_id: str = Query(min_length=1), user: User = Depends(current_user)
 ) -> dict[str, str]:
-    if not settings.github_app_slug:
+    if github_client is None:
         raise HTTPException(status_code=503, detail="GitHub App is not configured")
     try:
         state = product_store.begin_github_setup(user.id, organization_id)
@@ -217,7 +278,20 @@ def finish_github_setup(
     state: str = Query(min_length=20),
     user: User = Depends(current_user),
 ) -> RedirectResponse:
+    if github_client is None:
+        raise HTTPException(status_code=503, detail="GitHub App is not configured")
     try:
+        product_store.validate_github_setup_state(state, user.id)
+        installation, repositories = github_client.installation_details(installation_id)
+        product_store.upsert_installation(installation)
+        for repository in repositories:
+            product_store.upsert_repository(installation_id, repository)
+            for issue in github_client.list_open_issues(
+                installation_id,
+                repository_id=int(repository["id"]),
+                repository=repository["full_name"],
+            ):
+                product_store.upsert_issue(repository, issue)
         claimed_id = product_store.claim_github_installation(state, installation_id, user.id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -68,6 +68,15 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+function safeExternalUrl(value) {
+  try {
+    const url = new URL(String(value));
+    return ["https:", "http:"].includes(url.protocol) ? escapeHtml(url.href) : "#";
+  } catch (_error) {
+    return "#";
+  }
+}
+
 function showView(name) {
   document.querySelectorAll(".view").forEach((view) => {
     view.classList.toggle("active", view.id === `view-${name}`);
@@ -221,7 +230,16 @@ function renderResources(repositories = [], issues = [], workItems = []) {
         : item.status === "awaiting_publish_approval"
           ? `<button class="button primary mini approve-work" data-stage="publish" data-work-item-id="${escapeHtml(item.id)}">Approve draft PR</button>`
           : `<span class="work-status">${escapeHtml(item.status.replaceAll("_", " "))}</span>`;
-      return `<div class="resource-row with-actions"><div><strong>#${Number(item.issue_number)} · ${escapeHtml(item.issue_title)}</strong><small>${escapeHtml(item.full_name)} · plan v${Number(item.plan_version)}</small></div><div class="resource-row-actions">${approval}</div></div>`;
+      const plan = item.plan
+        ? `<details class="work-evidence" ${item.status === "awaiting_plan_approval" ? "open" : ""}><summary>Plan v${Number(item.plan_version)} · ${escapeHtml(item.plan.summary)}</summary><p>${escapeHtml(item.plan.reproduction || "")}</p><ol>${(item.plan.steps || []).map((step) => `<li>${escapeHtml(step)}</li>`).join("")}</ol><small>Expected files: ${(item.plan.expected_files || []).map(escapeHtml).join(", ") || "Not specified"}</small></details>`
+        : "";
+      const patch = item.artifact?.patch
+        ? `<details class="work-evidence"><summary>Review proposed patch · ${escapeHtml((item.artifact.patch.changed_files || []).join(", "))}</summary><p>${escapeHtml(item.artifact.patch.rationale || "")}</p><pre>${escapeHtml(item.artifact.patch.unified_diff || "")}</pre><small>${escapeHtml(item.artifact.verification?.note || "")}</small></details>`
+        : "";
+      const pullRequest = item.artifact?.pr_url
+        ? `<a class="pr-link" href="${safeExternalUrl(item.artifact.pr_url)}" target="_blank" rel="noopener noreferrer">Open draft PR #${Number(item.artifact.pr_number)}</a>`
+        : "";
+      return `<article class="resource-row work-item"><div class="work-item-copy"><strong>#${Number(item.issue_number)} · ${escapeHtml(item.issue_title)}</strong><small>${escapeHtml(item.full_name)} · ${escapeHtml(item.status.replaceAll("_", " "))}</small>${plan}${patch}${pullRequest}</div><div class="resource-row-actions">${approval}</div></article>`;
     }).join("")
     : "Assign an issue to create a durable planning job.";
 }
@@ -455,8 +473,11 @@ async function initialize() {
   showView(["demo", "product", "workflow", "project"].includes(initial) ? initial : "demo");
   if (new URLSearchParams(location.search).get("github") === "connected") {
     showView("product");
-    showToast("GitHub connected", "Verified repositories will appear as signed events arrive.");
+    showToast("GitHub connected", "Selected repositories are ready; new issues will sync by webhook.");
   }
 }
 
 initialize();
+window.setInterval(() => {
+  if (apiMode && currentAccount && document.visibilityState === "visible") renderAccount();
+}, 5000);

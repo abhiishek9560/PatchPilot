@@ -13,12 +13,17 @@ created by the Blueprint. SQLite remains the zero-dependency local fallback.
 ## Deployment order
 
 1. Create the Neon project and copy its pooled PostgreSQL connection string.
-2. Deploy `render.yaml` and provide `DATABASE_URL`; leave the GitHub variables
-   empty until the GitHub App exists.
+2. Deploy `render.yaml` and provide `DATABASE_URL`, `OPENAI_API_KEY`, and an
+   `OPENAI_MODEL` available to that API project; leave the GitHub variables empty
+   until the GitHub App exists.
 3. Copy the Render `onrender.com` URL.
 4. Deploy the Vercel project with `PATCHPILOT_API_URL` set to the Render URL.
 5. Copy the production `vercel.app` URL and register the GitHub App.
 6. Add the resulting GitHub App values to Render and redeploy.
+
+The Render service runs a lease-based worker thread in the same free web
+instance (`PATCHPILOT_WORKER_ENABLED=true`). This is appropriate for the V1
+single-instance pilot and avoids a paid background-worker service.
 
 ## GitHub App settings
 

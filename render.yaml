@@ -11,12 +11,18 @@ services:
       - key: PATCHPILOT_ENV
         value: production
       - key: PATCHPILOT_PLANNER
-        value: deterministic
+        value: openai
+      - key: PATCHPILOT_WORKER_ENABLED
+        value: true
       - key: PATCHPILOT_DATABASE_PATH
         value: /tmp/patchpilot.db
       - key: PATCHPILOT_WORKSPACE_ROOT
         value: /tmp/workspaces
       - key: DATABASE_URL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
         sync: false
       - key: GITHUB_APP_ID
         sync: false

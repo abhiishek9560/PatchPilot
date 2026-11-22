@@ -10,9 +10,8 @@ SQLite persistence, test evidence, and an auditable event timeline.
 **Live dashboard:** https://patchpilot-agent.dotingtulip8.chatgpt.site
 
 > The hosted static dashboard is an interactive product demonstration. The
-> executable workflow runs through FastAPI or the included CLI demo. Account and
-> GitHub-intake foundations are now implemented locally; V1 still uses a synthetic
-> publisher while isolated execution and live publication are completed.
+> executable product runs through FastAPI: users can install the GitHub App,
+> assign synchronized issues, review plans and diffs, and approve a real draft PR.
 
 ## V1 workflow
 
@@ -51,7 +50,10 @@ V1 cannot merge code or deploy an application.
 - Manual and automatic issue assignment with tenant authorization
 - Durable lease/retry jobs, versioned plan feedback, and approval-driven queuing
 - Short-lived GitHub App token exchange and real draft-PR API boundary
-- 26 automated tests plus an executable end-to-end demo
+- Disposable private-repository clones, deterministic branches, commits, pushes, and draft PRs
+- Patch and verification artifact persistence exposed to the review UI
+- In-process lease worker for a single free Render web service
+- 31 automated tests plus an executable end-to-end demo
 
 ## Quick demo
 
@@ -120,16 +122,16 @@ scripts/run_demo.py    Credential-free end-to-end demonstration
 
 ## Honest V1 boundary
 
-V1 supports one deliberately narrow Python fixture and a configured unit-test
-command. The deterministic planner's patch is known in advance so CI remains
-reproducible. The optional model adapter can propose a plan and patch, but V1
-does not yet clone arbitrary private repositories or publish to the real GitHub
-API.
+The deterministic planner remains only for the bundled fixture and tests. Real
+repositories require the structured model planner. PatchPilot clones selected
+private repositories, validates the proposed diff against scope policy, runs
+`git diff --check`, persists it for human review, then pushes a branch and opens
+a draft PR after a second approval.
 
-PostgreSQL-backed orchestration, plan feedback, and durable job leasing are now
-implemented. Task-specific isolated clones, real branch/commit/draft-PR
-publication, and live progress events remain in the production MVP. See the
-[production MVP plan](docs/PRODUCTION_MVP.md).
+V1 deliberately does not execute untrusted repository code on the shared API
+container. Repository test execution needs a separately isolated sandbox with
+CPU, memory, filesystem, time, and network limits. Trusted CI should run on the
+draft PR before merge. PatchPilot never merges or deploys user code.
 
 ## Documentation
 

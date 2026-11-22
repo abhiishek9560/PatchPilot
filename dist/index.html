@@ -51,7 +51,7 @@
 
           <div class="truth-banner">
             <strong id="truthTitle">This page is an interactive product demo.</strong>
-            <span id="truthCopy">The executable Python workflow, policy engine, SQLite audit store, and 11 automated tests are included in the repository.</span>
+            <span id="truthCopy">The executable workflow, GitHub App boundary, PostgreSQL adapter, and automated tests are included in the repository.</span>
           </div>
 
           <div class="demo-layout">
@@ -134,8 +134,8 @@
               <div class="panel-head"><div><p class="eyebrow">IMPLEMENTATION STATUS</p><h2>Production MVP</h2></div></div>
               <div class="foundation-step complete"><i>✓</i><div><strong>Accounts and sessions</strong><small>Registration, login, logout, membership</small></div></div>
               <div class="foundation-step complete"><i>✓</i><div><strong>GitHub event intake</strong><small>HMAC validation and delivery idempotency</small></div></div>
-              <div class="foundation-step active"><i>→</i><div><strong>Repository execution worker</strong><small>Queued isolated clone, patch, tests, branch</small></div></div>
-              <div class="foundation-step"><i>·</i><div><strong>Real draft PR publisher</strong><small>Installation token and GitHub REST API</small></div></div>
+              <div class="foundation-step complete"><i>✓</i><div><strong>Repository execution worker</strong><small>Queued disposable clone, plan, bounded patch</small></div></div>
+              <div class="foundation-step complete"><i>✓</i><div><strong>Real draft PR publisher</strong><small>Short-lived token, branch push, GitHub REST API</small></div></div>
               <p class="foundation-note">The public Site remains a showcase. Account and GitHub actions activate when this dashboard is served by the PatchPilot API.</p>
             </aside>
           </div>

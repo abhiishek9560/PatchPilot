@@ -77,6 +77,100 @@ class GitHubAppClientTests(unittest.TestCase):
         self.assertEqual(calls[1][2]["Authorization"], "Bearer one-hour-token")
         self.assertTrue(calls[1][3]["draft"])
 
+    def test_setup_callback_can_load_installation_and_selected_repositories(self) -> None:
+        calls = []
+
+        def transport(method: str, url: str, headers: dict, payload: dict | None):
+            calls.append((method, url, headers, payload))
+            if url.endswith("/app/installations/501"):
+                return {
+                    "id": 501,
+                    "account": {"login": "acme", "type": "Organization"},
+                    "repository_selection": "selected",
+                }
+            if url.endswith("/access_tokens"):
+                return {"token": "setup-token"}
+            return {
+                "repositories": [
+                    {"id": 901, "full_name": "acme/api", "default_branch": "main"}
+                ]
+            }
+
+        client = GitHubAppClient(
+            "12345",
+            "private-key",
+            transport=transport,
+            jwt_encoder=lambda _payload, _key: "signed-app-jwt",
+        )
+
+        installation, repositories = client.installation_details(501)
+
+        self.assertEqual(installation["account"]["login"], "acme")
+        self.assertEqual(repositories[0]["full_name"], "acme/api")
+        self.assertEqual(calls[-1][2]["Authorization"], "Bearer setup-token")
+
+    def test_publish_retry_reuses_existing_open_pull_request(self) -> None:
+        calls = []
+
+        def transport(method: str, url: str, headers: dict, payload: dict | None):
+            calls.append((method, url, headers, payload))
+            if url.endswith("/access_tokens"):
+                return {"token": "publication-token"}
+            if method == "GET":
+                return [
+                    {
+                        "html_url": "https://github.com/acme/api/pull/17",
+                        "number": 17,
+                        "title": "Existing draft",
+                    }
+                ]
+            raise AssertionError("a second pull request must not be created")
+
+        client = GitHubAppClient(
+            "12345",
+            "private-key",
+            transport=transport,
+            jwt_encoder=lambda _payload, _key: "signed-app-jwt",
+        )
+
+        pull_request = client.find_or_create_draft_pull_request(
+            installation_id=501,
+            repository_id=901,
+            repository="acme/api",
+            title="Fix #42",
+            head="patchpilot/issue-42",
+            base="main",
+            body="Verified by PatchPilot",
+        )
+
+        self.assertEqual(pull_request.number, 17)
+        self.assertEqual([call[0] for call in calls], ["POST", "GET"])
+
+    def test_initial_issue_sync_excludes_pull_requests(self) -> None:
+        def transport(method: str, url: str, _headers: dict, _payload: dict | None):
+            if url.endswith("/access_tokens"):
+                return {"token": "issue-token"}
+            self.assertEqual(method, "GET")
+            return [
+                {"number": 1, "title": "Real issue"},
+                {"number": 2, "title": "PR", "pull_request": {"url": "example"}},
+            ]
+
+        client = GitHubAppClient(
+            "12345",
+            "private-key",
+            transport=transport,
+            jwt_encoder=lambda _payload, _key: "signed-app-jwt",
+        )
+
+        issues = client.list_open_issues(
+            501,
+            repository_id=901,
+            repository="acme/api",
+        )
+
+        self.assertEqual([issue["number"] for issue in issues], [1])
+
 
 if __name__ == "__main__":
     unittest.main()

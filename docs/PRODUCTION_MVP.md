@@ -11,9 +11,9 @@ human approval gates.
 3. Signed, idempotent webhooks synchronize installations, repositories, and issues.
 4. A user explicitly assigns an issue, or enables an allowlisted auto-pick policy.
 5. A worker clones a task-specific revision into an isolated, disposable workspace.
-6. PatchPilot reproduces the issue and creates a structured plan with evidence.
+6. PatchPilot inspects bounded repository evidence and creates a structured plan.
 7. The user approves, rejects, or requests a revised plan. Approval is persisted.
-8. A worker produces a bounded patch, runs configured checks, and records evidence.
+8. A worker produces a bounded patch, runs static Git checks, and records evidence.
 9. The user reviews the diff and verification results and approves publication.
 10. A short-lived GitHub App installation token pushes a branch and creates a draft PR.
 
@@ -29,10 +29,10 @@ FastAPI web service ---- PostgreSQL
    |                         |
    | enqueue                 | durable jobs, approvals, audit events
    v                         |
-Redis queue -----------------+
+In-process lease worker -----+
    |
    v
-Isolated worker job ---- disposable repository workspace
+Disposable repository workspace
    |
    +---- OpenAI model (structured proposals only)
    +---- GitHub App (short-lived installation token)
@@ -64,10 +64,10 @@ the production PostgreSQL adapter.
 - Plan revisions, comments, approvals, and live progress events
 - Per-run authorization on every API operation
 
-Status: the SQLite and PostgreSQL adapters implement authorized work items,
-manual/automatic selection, idempotent assignment, versioned feedback, approvals,
-and expiring job leases with bounded retries. Isolated execution is the remaining
-major production-hosting piece.
+Status: implemented. The SQLite and PostgreSQL adapters provide authorized work
+items, manual/automatic selection, idempotent assignment, versioned feedback,
+approvals, artifacts, and expiring job leases with bounded retries. A daemon
+worker consumes those jobs in the V1 single-instance Render service.
 
 ### Slice 3 — real patch and PR
 
@@ -77,9 +77,10 @@ major production-hosting piece.
 - Branch creation, signed audit metadata, push, and draft-PR REST call
 - Retry-safe publication so one run cannot create duplicate PRs
 
-Status: GitHub App JWT creation, repository-scoped installation-token exchange,
-and the draft-PR REST boundary are implemented and covered by transport-level tests.
-Clone/branch/push and isolated test execution remain.
+Status: private clone, repository-scoped token exchange, bounded patch generation,
+artifact review, deterministic branch/commit/push, and idempotent draft-PR lookup
+are implemented and covered by a complete local boundary test. Executing arbitrary
+repository tests remains disabled until a separate sandbox is available.
 
 ### Slice 4 — launch
 
@@ -90,21 +91,14 @@ Clone/branch/push and isolated test execution remain.
 
 ## Deployment choice
 
-The fastest coherent first deployment is Render:
-
-- one web service for FastAPI and the dashboard;
-- one background worker for queued repair jobs;
-- managed PostgreSQL for durable product state;
-- managed Key Value for the queue.
-
-Vercel or the existing Site can host a separated marketing/frontend surface later,
-but repository cloning and test execution belong in isolated background compute,
-not a request-scoped frontend function. The current public Site remains the honest
-interactive showcase until the authenticated Render deployment is ready.
+The V1 deployment uses Vercel for the frontend, one free Render web service for
+FastAPI plus its in-process lease worker, and Neon PostgreSQL for durable product
+state and jobs. Repository cloning and patching remain backend-only; they never
+run in the request-scoped Vercel function.
 
 ## Launch definition
 
 The MVP is ready for real pilot users only when a newly registered user can install
-the GitHub App, select an issue, revise and approve a generated plan, observe an
-isolated verified patch run, approve publication, and receive exactly one real
+the GitHub App, select an issue, revise and approve a generated plan, review a
+policy-checked patch, approve publication, and receive exactly one real
 draft PR—with tenant authorization and audit events verified by automated tests.

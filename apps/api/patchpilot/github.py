@@ -4,7 +4,8 @@ import hashlib
 import hmac
 import time
 from dataclasses import dataclass
-from typing import Callable, Protocol
+from typing import Any, Callable, Protocol
+from urllib.parse import urlencode
 
 from .models import AgentRun
 from .product_store import SQLiteProductStore
@@ -55,7 +56,7 @@ class DraftPullRequest:
     title: str
 
 
-GitHubTransport = Callable[[str, str, dict[str, str], dict | None], dict]
+GitHubTransport = Callable[[str, str, dict[str, str], dict | None], Any]
 JWTEncoder = Callable[[dict, str], str]
 
 
@@ -88,13 +89,37 @@ class GitHubAppClient:
     @staticmethod
     def _httpx_transport(
         method: str, url: str, headers: dict[str, str], payload: dict | None
-    ) -> dict:
+    ) -> Any:
         import httpx
 
         with httpx.Client(timeout=20) as client:
             response = client.request(method, url, headers=headers, json=payload)
             response.raise_for_status()
             return response.json()
+
+    def find_open_pull_request(
+        self,
+        *,
+        token: str,
+        repository: str,
+        branch: str,
+    ) -> DraftPullRequest | None:
+        owner = repository.split("/", 1)[0]
+        query = urlencode({"state": "open", "head": f"{owner}:{branch}", "per_page": 1})
+        response = self.transport(
+            "GET",
+            f"{self.api_url}/repos/{repository}/pulls?{query}",
+            self._headers(token),
+            None,
+        )
+        if not response:
+            return None
+        item = response[0]
+        return DraftPullRequest(
+            url=str(item["html_url"]),
+            number=int(item["number"]),
+            title=str(item.get("title", "PatchPilot draft")),
+        )
 
     def app_jwt(self, now: int | None = None) -> str:
         issued = int(time.time()) if now is None else now
@@ -133,6 +158,43 @@ class GitHubAppClient:
             raise RuntimeError("GitHub did not return an installation access token")
         return str(token)
 
+    def installation_details(self, installation_id: int) -> tuple[dict, list[dict]]:
+        """Fetch installation metadata and its selected repositories after setup redirect."""
+        installation = self.transport(
+            "GET",
+            f"{self.api_url}/app/installations/{installation_id}",
+            self._headers(self.app_jwt()),
+            None,
+        )
+        token = self.installation_token(installation_id)
+        repositories = self.transport(
+            "GET",
+            f"{self.api_url}/installation/repositories?per_page=100",
+            self._headers(token),
+            None,
+        )
+        return installation, list(repositories.get("repositories", []))
+
+    def list_open_issues(
+        self,
+        installation_id: int,
+        *,
+        repository_id: int,
+        repository: str,
+    ) -> list[dict]:
+        token = self.installation_token(
+            installation_id,
+            repository_ids=[repository_id],
+            permissions={"issues": "read"},
+        )
+        response = self.transport(
+            "GET",
+            f"{self.api_url}/repos/{repository}/issues?state=open&per_page=100",
+            self._headers(token),
+            None,
+        )
+        return [item for item in response if "pull_request" not in item]
+
     def create_draft_pull_request(
         self,
         *,
@@ -149,6 +211,42 @@ class GitHubAppClient:
             repository_ids=[repository_id],
             permissions={"contents": "write", "pull_requests": "write"},
         )
+        response = self.transport(
+            "POST",
+            f"{self.api_url}/repos/{repository}/pulls",
+            self._headers(token),
+            {"title": title, "head": head, "base": base, "body": body, "draft": True},
+        )
+        return DraftPullRequest(
+            url=str(response["html_url"]),
+            number=int(response["number"]),
+            title=str(response.get("title", title)),
+        )
+
+    def find_or_create_draft_pull_request(
+        self,
+        *,
+        installation_id: int,
+        repository_id: int,
+        repository: str,
+        title: str,
+        head: str,
+        base: str,
+        body: str,
+    ) -> DraftPullRequest:
+        """Idempotently reuse an open PR for the deterministic PatchPilot branch."""
+        token = self.installation_token(
+            installation_id,
+            repository_ids=[repository_id],
+            permissions={"contents": "write", "pull_requests": "write"},
+        )
+        existing = self.find_open_pull_request(
+            token=token,
+            repository=repository,
+            branch=head,
+        )
+        if existing is not None:
+            return existing
         response = self.transport(
             "POST",
             f"{self.api_url}/repos/{repository}/pulls",

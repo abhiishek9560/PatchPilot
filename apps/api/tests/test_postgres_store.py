@@ -120,6 +120,31 @@ class PostgresStoreIntegrationTests(unittest.TestCase):
         patch_job = product_store.claim_job("postgres-patcher")
         self.assertIsNotNone(patch_job)
         self.assertEqual(patch_job["kind"], "create_patch")
+        product_store.record_patch_result(
+            work_item["id"],
+            branch_name=f"patchpilot/issue-42-{unique[:8]}",
+            patch={
+                "unified_diff": "--- a/app.py\n+++ b/app.py\n@@ -1 +1 @@\n-old\n+new\n",
+                "rationale": "PostgreSQL artifact test",
+                "changed_files": ["app.py"],
+            },
+            verification={"mode": "static", "passed": True},
+        )
+        product_store.complete_job(patch_job["id"], "postgres-patcher")
+        product_store.approve_work_item(user.id, work_item["id"], "publish")
+        publish_job = product_store.claim_job("postgres-publisher")
+        self.assertIsNotNone(publish_job)
+        self.assertEqual(publish_job["kind"], "publish_draft_pr")
+        product_store.record_pull_request(
+            work_item["id"],
+            commit_sha="a" * 40,
+            pr_url="https://github.com/patchpilot-integration/repository/pull/1",
+            pr_number=1,
+        )
+        product_store.complete_job(publish_job["id"], "postgres-publisher")
+        completed = product_store.get_work_item(user.id, work_item["id"])
+        self.assertEqual(completed["status"], "completed")
+        self.assertEqual(completed["artifact"]["pr_number"], 1)
 
         run = AgentRun(
             issue=Issue(repository=repository["full_name"], number=42, title=issue["title"], body=""),

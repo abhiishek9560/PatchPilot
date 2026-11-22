@@ -156,6 +156,16 @@ class SQLiteProductStore:
                 CREATE UNIQUE INDEX IF NOT EXISTS one_active_work_item_per_issue
                     ON work_items(organization_id, repository_id, issue_number)
                     WHERE status NOT IN ('completed', 'rejected', 'failed', 'cancelled');
+                CREATE TABLE IF NOT EXISTS work_item_artifacts (
+                    work_item_id TEXT PRIMARY KEY REFERENCES work_items(id) ON DELETE CASCADE,
+                    branch_name TEXT,
+                    patch_payload TEXT,
+                    verification_payload TEXT,
+                    commit_sha TEXT,
+                    pr_url TEXT,
+                    pr_number INTEGER,
+                    updated_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS plan_feedback (
                     id TEXT PRIMARY KEY,
                     work_item_id TEXT NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
@@ -322,6 +332,19 @@ class SQLiteProductStore:
             )
         return installation_id
 
+    def validate_github_setup_state(self, raw_state: str, user_id: str) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connect() as connection:
+            state = connection.execute(
+                """
+                SELECT 1 FROM github_setup_states
+                WHERE state_digest = ? AND user_id = ? AND used_at IS NULL AND expires_at > ?
+                """,
+                (secret_digest(raw_state), user_id, now),
+            ).fetchone()
+        if state is None:
+            raise ValueError("GitHub setup state is invalid or expired")
+
     def record_webhook_delivery(self, delivery_id: str, event_name: str) -> bool:
         with self._connect() as connection:
             inserted = connection.execute(
@@ -443,6 +466,149 @@ class SQLiteProductStore:
         plan_payload = item.pop("plan_payload")
         item["plan"] = json.loads(plan_payload) if plan_payload else None
         return item
+
+    @staticmethod
+    def _artifact(row: Any | None) -> dict | None:
+        if row is None:
+            return None
+        item = dict(row)
+        patch_payload = item.pop("patch_payload")
+        verification_payload = item.pop("verification_payload")
+        item["patch"] = json.loads(patch_payload) if patch_payload else None
+        item["verification"] = (
+            json.loads(verification_payload) if verification_payload else None
+        )
+        return item
+
+    def get_work_item_artifact(self, work_item_id: str) -> dict | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM work_item_artifacts WHERE work_item_id = ?",
+                (work_item_id,),
+            ).fetchone()
+        return self._artifact(row)
+
+    def get_job_context(self, work_item_id: str) -> dict:
+        """Return the trusted database context required by a background job."""
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT work_items.*, repositories.full_name, repositories.default_branch,
+                       repositories.installation_id, repositories.active AS repository_active,
+                       github_installations.status AS installation_status,
+                       issues.title AS issue_title, issues.body AS issue_body,
+                       issues.html_url AS issue_url, issues.labels AS issue_labels
+                FROM work_items
+                JOIN repositories ON repositories.github_id = work_items.repository_id
+                JOIN github_installations USING (installation_id)
+                JOIN issues ON issues.repository_id = work_items.repository_id
+                  AND issues.number = work_items.issue_number
+                WHERE work_items.id = ?
+                """,
+                (work_item_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError("Unknown work item")
+            feedback = connection.execute(
+                """
+                SELECT plan_version, message, created_at FROM plan_feedback
+                WHERE work_item_id = ? ORDER BY created_at
+                """,
+                (work_item_id,),
+            ).fetchall()
+        item = self._work_item(row)
+        item["issue_labels"] = json.loads(item["issue_labels"] or "[]")
+        item["feedback"] = [dict(entry) for entry in feedback]
+        item["artifact"] = self.get_work_item_artifact(work_item_id)
+        if not item["repository_active"] or item["installation_status"] != "active":
+            raise RuntimeError("GitHub repository installation is no longer active")
+        return item
+
+    def record_patch_result(
+        self,
+        work_item_id: str,
+        *,
+        branch_name: str,
+        patch: dict,
+        verification: dict,
+    ) -> dict:
+        now = utc_now()
+        with self._lock, self._connect() as connection:
+            row = connection.execute(
+                "SELECT status FROM work_items WHERE id = ?", (work_item_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError("Unknown work item")
+            if row["status"] not in {"queued_for_patch", "awaiting_publish_approval"}:
+                raise ValueError(f"Cannot record a patch while work item is {row['status']}")
+            connection.execute(
+                """
+                INSERT INTO work_item_artifacts(
+                    work_item_id, branch_name, patch_payload, verification_payload,
+                    commit_sha, pr_url, pr_number, updated_at
+                ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, ?)
+                ON CONFLICT(work_item_id) DO UPDATE SET
+                    branch_name=excluded.branch_name,
+                    patch_payload=excluded.patch_payload,
+                    verification_payload=excluded.verification_payload,
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    work_item_id,
+                    branch_name,
+                    json.dumps(patch),
+                    json.dumps(verification),
+                    now,
+                ),
+            )
+            connection.execute(
+                """
+                UPDATE work_items SET status = 'awaiting_publish_approval', updated_at = ?
+                WHERE id = ?
+                """,
+                (now, work_item_id),
+            )
+        artifact = self.get_work_item_artifact(work_item_id)
+        if artifact is None:  # pragma: no cover - defensive database invariant
+            raise RuntimeError("Patch artifact was not persisted")
+        return artifact
+
+    def record_pull_request(
+        self,
+        work_item_id: str,
+        *,
+        commit_sha: str,
+        pr_url: str,
+        pr_number: int,
+    ) -> dict:
+        now = utc_now()
+        with self._lock, self._connect() as connection:
+            row = connection.execute(
+                "SELECT status FROM work_items WHERE id = ?", (work_item_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError("Unknown work item")
+            if row["status"] not in {"queued_for_publish", "completed"}:
+                raise ValueError(
+                    f"Cannot record a pull request while work item is {row['status']}"
+                )
+            updated = connection.execute(
+                """
+                UPDATE work_item_artifacts SET commit_sha = ?, pr_url = ?, pr_number = ?,
+                    updated_at = ? WHERE work_item_id = ?
+                """,
+                (commit_sha, pr_url, pr_number, now, work_item_id),
+            ).rowcount
+            if not updated:
+                raise RuntimeError("Cannot publish without an approved patch artifact")
+            connection.execute(
+                "UPDATE work_items SET status = 'completed', updated_at = ? WHERE id = ?",
+                (now, work_item_id),
+            )
+        artifact = self.get_work_item_artifact(work_item_id)
+        if artifact is None:  # pragma: no cover - defensive database invariant
+            raise RuntimeError("Pull request artifact was not persisted")
+        return artifact
 
     def assign_issue(
         self,
@@ -576,7 +742,10 @@ class SQLiteProductStore:
                 """,
                 (user_id,),
             ).fetchall()
-        return [self._work_item(row) for row in rows]
+        items = [self._work_item(row) for row in rows]
+        for item in items:
+            item["artifact"] = self.get_work_item_artifact(item["id"])
+        return items
 
     def get_work_item(self, user_id: str, work_item_id: str) -> dict:
         with self._connect() as connection:
@@ -596,6 +765,7 @@ class SQLiteProductStore:
             raise KeyError("Unknown or unauthorized work item")
         item = self._work_item(row)
         item["feedback"] = self.list_plan_feedback(user_id, work_item_id)
+        item["artifact"] = self.get_work_item_artifact(work_item_id)
         return item
 
     def list_plan_feedback(self, user_id: str, work_item_id: str) -> list[dict]:

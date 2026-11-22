@@ -55,6 +55,22 @@ class Settings:
     github_webhook_secret: str = field(
         default_factory=lambda: os.getenv("GITHUB_WEBHOOK_SECRET", "")
     )
+    worker_enabled: bool = field(
+        default_factory=lambda: os.getenv("PATCHPILOT_WORKER_ENABLED", "true").casefold()
+        in {"1", "true", "yes", "on"}
+    )
+    git_author_name: str = field(
+        default_factory=lambda: os.getenv("PATCHPILOT_GIT_AUTHOR_NAME", "PatchPilot")
+    )
+    git_author_email: str = field(
+        default_factory=lambda: os.getenv(
+            "PATCHPILOT_GIT_AUTHOR_EMAIL", "patchpilot[bot]@users.noreply.github.com"
+        )
+    )
+
+    @property
+    def github_configured(self) -> bool:
+        return bool(self.github_app_slug and self.github_app_id and self.github_private_key)
 
     @property
     def secure_cookies(self) -> bool:
