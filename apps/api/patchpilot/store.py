@@ -6,6 +6,7 @@ from pathlib import Path
 from threading import RLock
 from typing import Protocol
 
+from .database import PostgresConnection
 from .models import AgentRun
 
 
@@ -85,3 +86,53 @@ class SQLiteRunStore:
             ).fetchall()
         return [AgentRun.from_dict(json.loads(row[0])) for row in rows]
 
+
+class PostgresRunStore:
+    def __init__(self, database_url: str) -> None:
+        self.database_url = database_url
+        self._lock = RLock()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS agent_runs (
+                    id TEXT PRIMARY KEY,
+                    status TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    payload TEXT NOT NULL
+                )
+                """
+            )
+
+    def _connect(self) -> PostgresConnection:
+        return PostgresConnection(self.database_url)
+
+    def save(self, run: AgentRun) -> None:
+        payload = json.dumps(run.to_dict(), separators=(",", ":"))
+        with self._lock, self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO agent_runs(id, status, updated_at, payload)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    status = excluded.status,
+                    updated_at = excluded.updated_at,
+                    payload = excluded.payload
+                """,
+                (run.id, run.status.value, run.updated_at, payload),
+            )
+
+    def get(self, run_id: str) -> AgentRun:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT payload FROM agent_runs WHERE id = ?", (run_id,)
+            ).fetchone()
+        if row is None:
+            raise KeyError(f"Unknown run: {run_id}")
+        return AgentRun.from_dict(json.loads(row["payload"]))
+
+    def list(self) -> list[AgentRun]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT payload FROM agent_runs ORDER BY updated_at DESC"
+            ).fetchall()
+        return [AgentRun.from_dict(json.loads(row["payload"])) for row in rows]

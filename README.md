@@ -86,11 +86,11 @@ docker compose up --build
 
 ## Deploy the web application
 
-The FastAPI container serves both the dashboard and the API, so the deployed
-product uses one origin for browser sessions, GitHub setup redirects, and
-webhooks. A Render Blueprint is provided in `render.yaml`; see
-[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the deployment and GitHub App
-configuration.
+Vercel serves the dashboard and proxies its `/api/*` requests to the FastAPI
+container on Render. Production records use PostgreSQL through `DATABASE_URL`;
+local development keeps SQLite as a zero-dependency fallback. See
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the free deployment and GitHub
+App configuration.
 
 ## Optional LLM planner
 
@@ -126,9 +126,10 @@ reproducible. The optional model adapter can propose a plan and patch, but V1
 does not yet clone arbitrary private repositories or publish to the real GitHub
 API.
 
-The current production-MVP milestone adds PostgreSQL-backed orchestration,
-task-specific isolated clones, plan feedback, real branch/commit/draft-PR
-publication, and live progress events. See the [production MVP plan](docs/PRODUCTION_MVP.md).
+PostgreSQL-backed orchestration, plan feedback, and durable job leasing are now
+implemented. Task-specific isolated clones, real branch/commit/draft-PR
+publication, and live progress events remain in the production MVP. See the
+[production MVP plan](docs/PRODUCTION_MVP.md).
 
 ## Documentation
 

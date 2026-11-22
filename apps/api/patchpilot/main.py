@@ -15,16 +15,20 @@ from .config import Settings
 from .github import DemoPublisher, process_webhook_event, verify_webhook_signature
 from .models import Issue
 from .planner import DeterministicPlanner, OpenAIAgentPlanner
-from .product_store import SQLiteProductStore, User
+from .product_store import PostgresProductStore, SQLiteProductStore, User
 from .security import hash_password, normalize_email, verify_password
-from .store import SQLiteRunStore
+from .store import PostgresRunStore, SQLiteRunStore
 from .workflow import InvalidTransition, PatchPilotWorkflow
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 settings = Settings()
-store = SQLiteRunStore(PROJECT_ROOT / settings.database_path)
-product_store = SQLiteProductStore(PROJECT_ROOT / settings.database_path)
+if settings.database_url:
+    store = PostgresRunStore(settings.database_url)
+    product_store = PostgresProductStore(settings.database_url)
+else:
+    store = SQLiteRunStore(PROJECT_ROOT / settings.database_path)
+    product_store = SQLiteProductStore(PROJECT_ROOT / settings.database_path)
 planner = (
     OpenAIAgentPlanner(settings.openai_model)
     if settings.planner == "openai"
@@ -131,7 +135,16 @@ def _account_payload(user: User) -> dict:
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "planner": settings.planner}
+    return {
+        "status": "ok",
+        "planner": settings.planner,
+        "database": "postgresql" if settings.database_url else "sqlite",
+    }
+
+
+@app.get("/api/health")
+def api_health() -> dict[str, str]:
+    return health()
 
 
 @app.post("/api/auth/register", status_code=201)

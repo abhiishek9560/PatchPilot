@@ -426,7 +426,7 @@ document.getElementById("workItemList").addEventListener("click", (event) => {
 
 async function initialize() {
   try {
-    const health = await request("/health");
+    const health = await request("/api/health");
     apiMode = health?.status === "ok";
   } catch (_error) {
     apiMode = false;

@@ -4,9 +4,9 @@ __pycache__/
 .ruff_cache/
 .mypy_cache/
 .venv/
+.vercel/
 .env
 .patchpilot/
 *.db
 *.sqlite*
 dist/*.tar.gz
-

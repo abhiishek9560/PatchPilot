@@ -8,6 +8,7 @@ services:
       PATCHPILOT_PLANNER: deterministic
       PATCHPILOT_DATABASE_PATH: /data/patchpilot.db
       PATCHPILOT_WORKSPACE_ROOT: /workspaces
+      DATABASE_URL: ${DATABASE_URL:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-}
       GITHUB_APP_ID: ${GITHUB_APP_ID:-}
@@ -27,6 +28,22 @@ services:
     cap_drop:
       - ALL
 
+  postgres:
+    image: postgres:17-alpine
+    profiles: ["postgres"]
+    environment:
+      POSTGRES_DB: patchpilot
+      POSTGRES_USER: patchpilot
+      POSTGRES_PASSWORD: patchpilot-dev-only
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U patchpilot -d patchpilot"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
 volumes:
   patchpilot-data:
   patchpilot-workspaces:
+  postgres-data:

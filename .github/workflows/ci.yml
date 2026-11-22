@@ -10,15 +10,39 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: patchpilot
+          POSTGRES_USER: patchpilot
+          POSTGRES_PASSWORD: patchpilot-ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U patchpilot -d patchpilot"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
+    env:
+      PATCHPILOT_TEST_DATABASE_URL: postgresql://patchpilot:patchpilot-ci@127.0.0.1:5432/patchpilot
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install Python dependencies
+        run: python3 -m pip install --upgrade pip .
       - name: Run deterministic workflow and tests
         run: |
           python3 scripts/run_demo.py
           python3 -m unittest discover -s apps/api/tests -v
+      - name: Test the Vercel API proxy
+        run: node --test tests/vercel_proxy.test.mjs
       - name: Check Python syntax
         run: python3 -m compileall -q apps/api scripts
-
+      - name: Build production API image
+        run: docker build -f Dockerfile.api -t patchpilot-api:ci .

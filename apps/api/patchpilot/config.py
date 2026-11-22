@@ -16,6 +16,7 @@ class Settings:
     database_path: Path = field(
         default_factory=lambda: Path(os.getenv("PATCHPILOT_DATABASE_PATH", ".patchpilot/patchpilot.db"))
     )
+    database_url: str = field(default_factory=lambda: os.getenv("DATABASE_URL", "").strip())
     workspace_root: Path = field(
         default_factory=lambda: Path(os.getenv("PATCHPILOT_WORKSPACE_ROOT", ".patchpilot/workspaces"))
     )

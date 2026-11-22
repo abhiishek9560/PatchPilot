@@ -53,8 +53,8 @@ model may propose a plan or diff, but trusted code owns tools and side effects.
 - Webhook HMAC verification and delivery idempotency
 - Repository and issue projections
 
-Status: implemented. The local executable uses SQLite until the PostgreSQL adapter
-and migrations land in Slice 2.
+Status: implemented. Local execution defaults to SQLite; `DATABASE_URL` selects
+the production PostgreSQL adapter.
 
 ### Slice 2 — durable orchestration
 
@@ -64,10 +64,10 @@ and migrations land in Slice 2.
 - Plan revisions, comments, approvals, and live progress events
 - Per-run authorization on every API operation
 
-Status: the local adapter now implements authorized work items, manual/automatic
-selection, idempotent assignment, versioned feedback, approvals, and expiring
-job leases with bounded retries. PostgreSQL migrations and isolated execution are
-the remaining production-hosting pieces.
+Status: the SQLite and PostgreSQL adapters implement authorized work items,
+manual/automatic selection, idempotent assignment, versioned feedback, approvals,
+and expiring job leases with bounded retries. Isolated execution is the remaining
+major production-hosting piece.
 
 ### Slice 3 — real patch and PR
 

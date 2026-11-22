@@ -55,10 +55,10 @@ The planner does not execute commands or publish changes. It receives bounded ev
 
 ### Persistence
 
-`store.py` uses SQLite for V1 runs and events. `product_store.py` adds users,
-digest-only sessions, organizations, GitHub installations, repositories, issues,
-and idempotent webhook deliveries. SQLite remains the local adapter; the production
-MVP moves these tables to PostgreSQL before multi-instance deployment.
+`store.py` and `product_store.py` provide both local SQLite and production
+PostgreSQL adapters. They persist runs, digest-only sessions, organizations,
+GitHub installations, repositories, issues, idempotent webhook deliveries,
+approvals, and durable jobs. `DATABASE_URL` selects PostgreSQL in production.
 
 ### GitHub integration
 

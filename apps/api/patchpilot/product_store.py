@@ -6,8 +6,10 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import RLock
+from typing import Any
 from uuid import uuid4
 
+from .database import PostgresConnection
 from .models import utc_now
 from .security import expires_at, issue_secret, secret_digest
 
@@ -54,6 +56,10 @@ class SQLiteProductStore:
         connection.execute("PRAGMA foreign_keys = ON")
         return connection
 
+    @staticmethod
+    def _integrity_error_class() -> type[Exception]:
+        return sqlite3.IntegrityError
+
     def _initialize(self) -> None:
         with self._connect() as connection:
             connection.executescript(
@@ -94,7 +100,7 @@ class SQLiteProductStore:
                     created_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS github_installations (
-                    installation_id INTEGER PRIMARY KEY,
+                    installation_id BIGINT PRIMARY KEY,
                     organization_id TEXT REFERENCES organizations(id),
                     account_login TEXT NOT NULL,
                     account_type TEXT NOT NULL,
@@ -103,8 +109,8 @@ class SQLiteProductStore:
                     updated_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS repositories (
-                    github_id INTEGER PRIMARY KEY,
-                    installation_id INTEGER NOT NULL REFERENCES github_installations(installation_id),
+                    github_id BIGINT PRIMARY KEY,
+                    installation_id BIGINT NOT NULL REFERENCES github_installations(installation_id),
                     full_name TEXT NOT NULL UNIQUE,
                     default_branch TEXT NOT NULL,
                     private INTEGER NOT NULL,
@@ -112,7 +118,7 @@ class SQLiteProductStore:
                     updated_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS issues (
-                    repository_id INTEGER NOT NULL REFERENCES repositories(github_id),
+                    repository_id BIGINT NOT NULL REFERENCES repositories(github_id),
                     number INTEGER NOT NULL,
                     title TEXT NOT NULL,
                     body TEXT NOT NULL,
@@ -134,7 +140,7 @@ class SQLiteProductStore:
                 CREATE TABLE IF NOT EXISTS work_items (
                     id TEXT PRIMARY KEY,
                     organization_id TEXT NOT NULL REFERENCES organizations(id),
-                    repository_id INTEGER NOT NULL REFERENCES repositories(github_id),
+                    repository_id BIGINT NOT NULL REFERENCES repositories(github_id),
                     issue_number INTEGER NOT NULL,
                     requested_by TEXT NOT NULL REFERENCES users(id),
                     selection_mode TEXT NOT NULL CHECK(selection_mode IN ('manual', 'automatic')),
@@ -187,7 +193,7 @@ class SQLiteProductStore:
             )
 
     @staticmethod
-    def _user(row: sqlite3.Row) -> User:
+    def _user(row: Any) -> User:
         return User(row["id"], row["email"], row["display_name"], row["created_at"])
 
     def register_user(
@@ -204,7 +210,7 @@ class SQLiteProductStore:
                     "INSERT INTO users VALUES (?, ?, ?, ?, ?)",
                     (user_id, email, display_name, password_hash, now),
                 )
-            except sqlite3.IntegrityError as exc:
+            except self._integrity_error_class() as exc:
                 raise ValueError("An account with that email already exists") from exc
             connection.execute(
                 "INSERT INTO organizations VALUES (?, ?, ?, ?)",
@@ -318,14 +324,14 @@ class SQLiteProductStore:
 
     def record_webhook_delivery(self, delivery_id: str, event_name: str) -> bool:
         with self._connect() as connection:
-            try:
-                connection.execute(
-                    "INSERT INTO webhook_deliveries VALUES (?, ?, 'processing', NULL, ?, NULL)",
-                    (delivery_id, event_name, utc_now()),
-                )
-            except sqlite3.IntegrityError:
-                return False
-        return True
+            inserted = connection.execute(
+                """
+                INSERT INTO webhook_deliveries VALUES (?, ?, 'processing', NULL, ?, NULL)
+                ON CONFLICT(delivery_id) DO NOTHING
+                """,
+                (delivery_id, event_name, utc_now()),
+            ).rowcount
+        return bool(inserted)
 
     def finish_webhook_delivery(self, delivery_id: str, error: str | None = None) -> None:
         with self._connect() as connection:
@@ -432,7 +438,7 @@ class SQLiteProductStore:
         return result
 
     @staticmethod
-    def _work_item(row: sqlite3.Row) -> dict:
+    def _work_item(row: Any) -> dict:
         item = dict(row)
         plan_payload = item.pop("plan_payload")
         item["plan"] = json.loads(plan_payload) if plan_payload else None
@@ -540,7 +546,7 @@ class SQLiteProductStore:
         )
 
     def _enqueue_job(
-        self, connection: sqlite3.Connection, work_item_id: str, kind: str, payload: dict
+        self, connection: Any, work_item_id: str, kind: str, payload: dict
     ) -> str:
         job_id = str(uuid4())
         now = utc_now()
@@ -606,7 +612,7 @@ class SQLiteProductStore:
             ).fetchall()
         return [dict(row) for row in rows]
 
-    def get_work_item_authorization(self, user_id: str, work_item_id: str) -> sqlite3.Row:
+    def get_work_item_authorization(self, user_id: str, work_item_id: str) -> Any:
         with self._connect() as connection:
             row = connection.execute(
                 """
@@ -782,3 +788,56 @@ class SQLiteProductStore:
                     (utc_now(), job_id),
                 )
         return final
+
+
+class PostgresProductStore(SQLiteProductStore):
+    """Production product store backed by a standard PostgreSQL DATABASE_URL."""
+
+    def __init__(self, database_url: str) -> None:
+        self.database_url = database_url
+        self._lock = RLock()
+        self._initialize()
+
+    def _connect(self) -> PostgresConnection:
+        return PostgresConnection(self.database_url)
+
+    @staticmethod
+    def _integrity_error_class() -> type[Exception]:
+        import psycopg
+
+        return psycopg.IntegrityError
+
+    def claim_job(self, worker_id: str, lease_seconds: int = 300) -> dict | None:
+        now = datetime.now(timezone.utc)
+        now_text = now.isoformat()
+        lease_expires = (now + timedelta(seconds=lease_seconds)).isoformat()
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM durable_jobs
+                WHERE (status = 'queued' AND available_at <= ?)
+                   OR (status = 'leased' AND lease_expires_at <= ?)
+                ORDER BY created_at
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+                """,
+                (now_text, now_text),
+            ).fetchone()
+            if row is None:
+                return None
+            connection.execute(
+                """
+                UPDATE durable_jobs SET status = 'leased', attempts = attempts + 1,
+                    lease_owner = ?, lease_expires_at = ?, updated_at = ? WHERE id = ?
+                """,
+                (worker_id, lease_expires, now_text, row["id"]),
+            )
+            result = dict(row)
+            result.update(
+                status="leased",
+                attempts=int(row["attempts"]) + 1,
+                lease_owner=worker_id,
+                lease_expires_at=lease_expires,
+            )
+            result["payload"] = json.loads(result["payload"])
+            return result
