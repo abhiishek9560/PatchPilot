@@ -61,7 +61,11 @@ export default {
     }
     const responseHeaders = new Headers(response.headers);
     for (const header of HOP_BY_HOP_HEADERS) responseHeaders.delete(header);
-    return new Response(response.body, {
+    // Buffer the upstream response before returning it. Vercel's Node.js
+    // function adapter can otherwise finalize a proxied ReadableStream after
+    // forwarding the status and headers but before sending its body.
+    const responseBody = request.method === "HEAD" ? null : await response.arrayBuffer();
+    return new Response(responseBody, {
       status: response.status,
       headers: responseHeaders,
     });

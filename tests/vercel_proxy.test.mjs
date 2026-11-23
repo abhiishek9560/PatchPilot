@@ -22,8 +22,9 @@ test("proxy preserves API requests, cookies, redirects, and response cookies", a
     response.writeHead(307, {
       location: "/api/github/install",
       "set-cookie": "patchpilot_session=test-token; Path=/; HttpOnly; SameSite=Lax",
+      "content-type": "application/json",
     });
-    response.end();
+    response.end(JSON.stringify({ redirected: true }));
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   context.after(() => new Promise((resolve) => server.close(resolve)));
@@ -48,6 +49,7 @@ test("proxy preserves API requests, cookies, redirects, and response cookies", a
   assert.equal(response.status, 307);
   assert.equal(response.headers.get("location"), "/api/github/install");
   assert.match(response.headers.get("set-cookie"), /patchpilot_session=test-token/);
+  assert.deepEqual(await response.json(), { redirected: true });
   assert.equal(received.method, "POST");
   assert.equal(received.url, "/api/auth/login?next=dashboard");
   assert.equal(received.headers.cookie, "patchpilot_session=browser-token");
